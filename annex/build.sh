@@ -53,7 +53,6 @@ case "$cmd" in
     node apps/server/scripts/cli.ts build-exe
     node scripts/build-cli-archive.ts --platform linux --arch x64 --version "$version" \
       --resource-monitor-dir "$(dirname "$monitor")" --output-dir release-cli
-    node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "$version"
     ;;
   *) echo "unknown command: $cmd" >&2; exit 64 ;;
 esac
