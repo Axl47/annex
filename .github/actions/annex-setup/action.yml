@@ -1,0 +1,19 @@
+name: Annex setup
+description: Node from engines.node, pnpm from packageManager, dependencies installed, and vp on PATH.
+runs:
+  using: composite
+  steps:
+    - id: versions
+      shell: bash
+      run: |
+        echo "node=$(node -p 'require("./package.json").engines.node')" >> "$GITHUB_OUTPUT"
+        echo "pnpm=$(node -p 'require("./package.json").packageManager.split("@")[1]')" >> "$GITHUB_OUTPUT"
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ steps.versions.outputs.node }}
+    - shell: bash
+      run: npm install -g "pnpm@${{ steps.versions.outputs.pnpm }}"
+    - shell: bash
+      run: pnpm install --frozen-lockfile
+    - shell: bash
+      run: echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
