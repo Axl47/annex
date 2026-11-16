@@ -45,7 +45,7 @@ sub 's/^\$repo = "pingdotgg\/t3code"/\$repo = "Axl47\/annex"/m' scripts/install.
 # Upstream's workflows target pingdotgg's runners and secrets; the fork runs only its own annex-* ones.
 find .github/workflows -type f ! -name 'annex-*' -delete
 # Scripts only those workflows ran look unused to knip, which then blocks every commit.
-sub 's|(\n  "ignoreBinaries": .*\n)(?!  // Annex)|$1  // Annex: run only by upstream workflows the fork deletes.\n  "ignoreFiles": [".github/scripts/mirror-play-apk.cjs", "apps/web/scripts/verify-built-boot.ts", "scripts/resolve-nightly-release.ts"],\n|' knip.jsonc
+sub 's|(\n  "ignoreBinaries": .*\n)(?!  // Annex)|$1  // Annex: run only by upstream workflows the fork deletes.\n  "ignoreFiles": [\n    ".github/scripts/mirror-play-apk.cjs",\n    "apps/web/scripts/verify-built-boot.ts",\n    "scripts/resolve-nightly-release.ts",\n  ],\n|' knip.jsonc
 
 # App icons, rendered by annex/icons/generate.mjs, replace T3's on both desktop channels, the web
 # client, and Android. Copies fail if upstream renames a target, rather than adding stray files.
@@ -96,5 +96,5 @@ expect apps/mobile/src/components/CompactBrandTitle.tsx 'nnex'
 expect packages/shared/src/cliRelease.ts 'const CLI_RELEASE_REPOSITORY = "Axl47/annex";'
 expect apps/mobile/src/features/settings/environment-maintenance.test.ts '"https://github.com/Axl47/annex/releases.atom"'
 expect scripts/install.sh 'repo="Axl47/annex"'
-expect knip.jsonc '"ignoreFiles": [".github/scripts/mirror-play-apk.cjs"'
+expect knip.jsonc '"scripts/resolve-nightly-release.ts",'
 echo "rebranded"
