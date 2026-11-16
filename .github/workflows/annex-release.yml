@@ -21,17 +21,18 @@ permissions:
   contents: read
 
 jobs:
+  # Built on Linux like upstream's releases (a native Windows build packs extra files and fails the
+  # payload check); cargo-xwin cross-compiles the resource monitor.
   windows:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 90
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
       - uses: ./.github/actions/annex-setup
+      - run: rustup target add x86_64-pc-windows-msvc && cargo install --locked cargo-xwin@0.23.1
+      - run: cargo xwin build --locked --release --manifest-path native/resource-monitor/Cargo.toml --target x86_64-pc-windows-msvc
       - run: ./annex/build.sh win "${{ inputs.version }}"
       - uses: actions/upload-artifact@v4
         with:
