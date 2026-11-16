@@ -31,6 +31,8 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
       - uses: ./.github/actions/annex-setup
+      # Desktop builds also compile the Linux browser import helper, which links libsecret.
+      - run: sudo apt-get update -q && sudo apt-get install -yq libsecret-1-dev
       - run: rustup target add x86_64-pc-windows-msvc && cargo install --locked cargo-xwin@0.23.1
       - run: cargo xwin build --locked --release --manifest-path native/resource-monitor/Cargo.toml --target x86_64-pc-windows-msvc
       - run: ./annex/build.sh win "${{ inputs.version }}"
@@ -51,7 +53,7 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
       - uses: ./.github/actions/annex-setup
-      - run: command -v patchelf || { sudo apt-get update && sudo apt-get install -y patchelf libsecret-1-dev; }
+      - run: sudo apt-get update -q && sudo apt-get install -yq patchelf libsecret-1-dev
       - run: ./annex/build.sh cli "${{ inputs.version }}"
       - uses: actions/upload-artifact@v4
         with:
