@@ -45,6 +45,28 @@ sub 's/^\$repo = "pingdotgg\/t3code"/\$repo = "Axl47\/annex"/m' scripts/install.
 # Upstream's workflows target pingdotgg's runners and secrets; the fork runs only its own annex-* ones.
 find .github/workflows -type f ! -name 'annex-*' -delete
 
+# App icons, rendered by annex/icons/generate.mjs, replace T3's on both desktop channels, the web
+# client, and Android. Copies fail if upstream renames a target, rather than adding stray files.
+icon() { [ -f "$2" ] || { echo "rebrand: icon target $2 is gone; update annex/rebrand.sh" >&2; exit 1; }; cp "annex/icons/out/$1" "$2"; }
+for f in ios-1024.png macos-1024.png universal-1024.png; do
+  icon "$f" "assets/nightly/nightly-$f"
+  icon "$f" "assets/prod/black-$f"
+done
+for f in windows.ico web-favicon.ico web-favicon-16x16.png web-favicon-32x32.png web-apple-touch-180.png web-icon-192x192.png web-icon-512x512.png; do
+  icon "$f" "assets/nightly/nightly-$f"
+  icon "$f" "assets/prod/t3-black-$f"
+done
+icon web-favicon.ico apps/web/public/favicon.ico
+icon web-favicon-16x16.png apps/web/public/favicon-16x16.png
+icon web-favicon-32x32.png apps/web/public/favicon-32x32.png
+icon web-apple-touch-180.png apps/web/public/apple-touch-icon.png
+icon web-icon-192x192.png apps/web/public/icon-192x192.png
+icon web-icon-512x512.png apps/web/public/icon-512x512.png
+for f in android-icon-foreground.png android-icon-mark.png android-notification-icon.png; do icon "$f" "apps/mobile/assets/$f"; done
+icon android-splash-icon.png apps/mobile/assets/android-splash-icon-prod.png
+# Android adaptive icon and splash background for the production variant: the icon's navy.
+sub 's/(const RELEASE_ASSETS = \{.*?androidAdaptiveBackgroundColor: )"#000000"/$1"#0b1222"/s' apps/mobile/app.config.ts
+
 # Desktop tests that assert the names above.
 sub 's/T3 Code \$\{stage\}/Annex \${stage}/g; s/T3 Code \(\$\{stage\}\)/Annex (\${stage})/g; s/t3code-v2/annex/g; s/(Support|app-data)\/t3code-dev"/$1\/annex-dev"/g' \
   apps/desktop/src/app/DesktopAppIdentity.test.ts apps/desktop/src/app/DesktopUserData.test.ts \
@@ -59,6 +81,7 @@ expect apps/desktop/src/app/DesktopEnvironment.ts '"dev.axl47.annex.dev" : "dev.
 expect apps/desktop/src/app/DesktopUserData.ts 'current: "annex",'
 expect apps/mobile/app.config.ts 'androidPackage: "dev.axl47.annex",'
 expect apps/mobile/app.config.ts 'enabled: false,'
+expect apps/mobile/app.config.ts 'androidAdaptiveBackgroundColor: "#0b1222",'
 expect apps/web/src/components/T3Wordmark.tsx 'viewBox="0 0 60 57"'
 expect apps/mobile/src/components/T3Wordmark.tsx 'viewBox="0 0 60 57"'
 expect apps/web/src/components/sidebar/SidebarChrome.tsx 'nnex'
