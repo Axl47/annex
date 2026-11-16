@@ -58,6 +58,7 @@ jobs:
       - uses: ./.github/actions/annex-setup
       - run: sudo apt-get update -q && sudo apt-get install -yq patchelf libsecret-1-dev
       - run: ./annex/build.sh cli "${{ inputs.version }}"
+      - run: node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "${{ inputs.version }}"
       - uses: actions/upload-artifact@v4
         with:
           name: linux-cli
