@@ -40,4 +40,17 @@ sub 's/T3 Code \$\{stage\}/Annex \${stage}/g; s/T3 Code \(\$\{stage\}\)/Annex (\
   apps/desktop/src/app/DesktopAppIdentity.test.ts apps/desktop/src/app/DesktopUserData.test.ts \
   apps/desktop/src/app/DesktopClerk.test.ts
 sub 's/Name=T3 Code \((Beta|Nightly|Dev)\)/Name=Annex ($1)/g' apps/desktop/src/app/DesktopPreReadyPlatform.test.ts
+# Fail loudly if upstream moved a line a substitution targets, instead of silently shipping T3 branding.
+expect() { grep -qF -- "$2" "$1" || { echo "rebrand: '$2' missing from $1; update annex/rebrand.sh" >&2; exit 1; }; }
+expect apps/desktop/package.json '"productName": "Annex"'
+expect scripts/build-desktop-artifact.ts 'const DESKTOP_APP_ID = "dev.axl47.annex";'
+expect apps/desktop/src/app/DesktopEnvironment.ts 'const APP_BASE_NAME = "Annex";'
+expect apps/desktop/src/app/DesktopEnvironment.ts '"dev.axl47.annex.dev" : "dev.axl47.annex"'
+expect apps/desktop/src/app/DesktopUserData.ts 'current: "annex",'
+expect apps/mobile/app.config.ts 'androidPackage: "dev.axl47.annex",'
+expect apps/mobile/app.config.ts 'enabled: false,'
+expect apps/web/src/components/T3Wordmark.tsx 'viewBox="0 0 60 57"'
+expect apps/mobile/src/components/T3Wordmark.tsx 'viewBox="0 0 60 57"'
+expect apps/web/src/components/sidebar/SidebarChrome.tsx 'nnex'
+expect apps/mobile/src/components/CompactBrandTitle.tsx 'nnex'
 echo "rebranded"
