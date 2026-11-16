@@ -47,6 +47,9 @@ case "$cmd" in
     monitor="$(mktemp -d)/linux-x64"
     mkdir -p "$monitor"
     cp native/resource-monitor/target/release/t3-resource-monitor "$monitor/"
+    # The archive ships the built server and web client; brand the client like desktop builds do.
+    vp run --filter t3 build
+    node scripts/apply-web-brand-assets.ts nightly apps/server/dist/client
     node apps/server/scripts/cli.ts build-exe
     node scripts/build-cli-archive.ts --platform linux --arch x64 --version "$version" \
       --resource-monitor-dir "$(dirname "$monitor")" --output-dir release-cli
