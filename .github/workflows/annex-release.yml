@@ -1,0 +1,119 @@
+name: Annex release
+
+# Started by annex/release.sh after it drafts the release with the signed macOS build. Adds the
+# Windows installer, the Linux t3 CLI archive, and the Android APK, then publishes the release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version (the draft release is v<version>)
+        required: true
+      ref:
+        description: Commit to build
+        required: true
+
+concurrency:
+  group: annex-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: ./.github/actions/annex-setup
+      - run: ./annex/build.sh win "${{ inputs.version }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            release/*.exe
+            release/*.exe.blockmap
+            release/nightly.yml
+          if-no-files-found: error
+
+  linux-cli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: ./.github/actions/annex-setup
+      - run: command -v patchelf || { sudo apt-get update && sudo apt-get install -y patchelf libsecret-1-dev; }
+      - run: ./annex/build.sh cli "${{ inputs.version }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-cli
+          path: release-cli/*
+          if-no-files-found: error
+
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: ./.github/actions/annex-setup
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Build release APK
+        working-directory: apps/mobile
+        env:
+          APP_VARIANT: production
+          EXPO_NO_GIT_STATUS: "1"
+        run: |
+          pnpm exec expo prebuild --clean --platform android
+          cd android && ./gradlew assembleRelease --no-daemon -q
+      # Expo's release build is signed with the debug key; re-sign with Annex's key so every APK
+      # can update the one before it.
+      - name: Sign APK
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          printf '%s' "$ANDROID_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/annex.jks"
+          mkdir -p out
+          "$tools/zipalign" -f -p 4 apps/mobile/android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" sign --ks "$RUNNER_TEMP/annex.jks" --ks-key-alias annex \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEYSTORE_PASSWORD \
+            --out "out/Annex-${{ inputs.version }}.apk" "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" verify "out/Annex-${{ inputs.version }}.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: out/*.apk
+          if-no-files-found: error
+
+  publish:
+    needs: [windows, linux-cli, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: v${{ inputs.version }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      # Servers verify downloaded CLI archives against this file.
+      - run: cd assets && sha256sum t3-* > SHA256SUMS && cat SHA256SUMS
+      - run: gh release upload "$TAG" assets/* --repo "$GITHUB_REPOSITORY" --clobber
+      - run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
