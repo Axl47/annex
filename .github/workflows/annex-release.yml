@@ -36,6 +36,9 @@ jobs:
       - run: rustup target add x86_64-pc-windows-msvc && cargo install --locked cargo-xwin@0.23.1
       - run: cargo xwin build --locked --release --manifest-path native/resource-monitor/Cargo.toml --target x86_64-pc-windows-msvc
       - run: ./annex/build.sh win "${{ inputs.version }}"
+        env:
+          # Package the cargo-xwin binary above; the build's own cargo call has no MSVC linker here.
+          T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: "true"
       - uses: actions/upload-artifact@v4
         with:
           name: windows
