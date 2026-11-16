@@ -35,6 +35,16 @@ sub 's/<T3Wordmark aria-label="T3"/<T3Wordmark aria-label="Annex"/; s/items-base
 sub 's/"T3 Code, Threads"/"Annex, Threads"/; s/className="flex-row items-center gap-1\.5"/className="flex-row items-center gap-px"/; s/\{ gap: 5\.25 \* scale \}/{ gap: 1 * scale }/; s/>\n(\s*)Code\n(\s*)<\/Text>/>\n$1nnex\n$2<\/Text>/' \
   apps/mobile/src/components/CompactBrandTitle.tsx
 
+# Servers update from Annex's releases: `t3 update`, remote updates, and the install scripts.
+sub 's/const CLI_RELEASE_REPOSITORY = "pingdotgg\/t3code";/const CLI_RELEASE_REPOSITORY = "Axl47\/annex";/' packages/shared/src/cliRelease.ts
+sub 's/"\/repos\/pingdotgg\/t3code\/releases"/"\/repos\/Axl47\/annex\/releases"/' apps/server/src/cli/update.test.ts
+sub 's/pingdotgg\/t3code\/releases/Axl47\/annex\/releases/g' apps/mobile/src/features/settings/environment-maintenance.test.ts
+sub 's/^repo="pingdotgg\/t3code"/repo="Axl47\/annex"/m' scripts/install.sh
+sub 's/^\$repo = "pingdotgg\/t3code"/\$repo = "Axl47\/annex"/m' scripts/install.ps1
+
+# Upstream's workflows target pingdotgg's runners and secrets; the fork runs only its own annex-* ones.
+find .github/workflows -type f ! -name 'annex-*' -delete
+
 # Desktop tests that assert the names above.
 sub 's/T3 Code \$\{stage\}/Annex \${stage}/g; s/T3 Code \(\$\{stage\}\)/Annex (\${stage})/g; s/t3code-v2/annex/g; s/(Support|app-data)\/t3code-dev"/$1\/annex-dev"/g' \
   apps/desktop/src/app/DesktopAppIdentity.test.ts apps/desktop/src/app/DesktopUserData.test.ts \
@@ -53,4 +63,7 @@ expect apps/web/src/components/T3Wordmark.tsx 'viewBox="0 0 60 57"'
 expect apps/mobile/src/components/T3Wordmark.tsx 'viewBox="0 0 60 57"'
 expect apps/web/src/components/sidebar/SidebarChrome.tsx 'nnex'
 expect apps/mobile/src/components/CompactBrandTitle.tsx 'nnex'
+expect packages/shared/src/cliRelease.ts 'const CLI_RELEASE_REPOSITORY = "Axl47/annex";'
+expect apps/mobile/src/features/settings/environment-maintenance.test.ts '"https://github.com/Axl47/annex/releases.atom"'
+expect scripts/install.sh 'repo="Axl47/annex"'
 echo "rebranded"
