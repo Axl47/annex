@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Applies Annex's identity (app name, bundle ids, link scheme, profile folder) on top of upstream.
+# Applies Annex's identity (app name, bundle ids, link scheme, profile folder, icons, README) on top of upstream.
 # Idempotent: the nightly rebase drops the old "rebrand" commit, re-runs this, and commits the result,
 # so branding never needs manual conflict resolution. Internal identifiers (@t3tools/*, T3CODE_*, ~/.t3) stay.
 set -euo pipefail
@@ -66,6 +66,11 @@ for f in android-icon-foreground.png android-icon-mark.png android-notification-
 icon android-splash-icon.png apps/mobile/assets/android-splash-icon-prod.png
 # Android adaptive icon and splash background for the production variant: the icon's navy.
 sub 's/(const RELEASE_ASSETS = \{.*?androidAdaptiveBackgroundColor: )"#000000"/$1"#0b1222"/s' apps/mobile/app.config.ts
+
+# Docs: the fork's own README, and its Fork section appended to upstream's agent instructions.
+cp annex/README.md README.md
+sub 's/\n## Fork\n.*//s' AGENTS.md
+printf '\n' >> AGENTS.md && cat annex/AGENTS.md >> AGENTS.md
 
 # Desktop tests that assert the names above.
 sub 's/T3 Code \$\{stage\}/Annex \${stage}/g; s/T3 Code \(\$\{stage\}\)/Annex (\${stage})/g; s/t3code-v2/annex/g; s/(Support|app-data)\/t3code-dev"/$1\/annex-dev"/g' \
