@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { projectScriptCwd } from "@t3tools/shared/projectScripts";
 import type {
   EnvironmentId,
   GeasActInput,
@@ -11,7 +12,13 @@ import type {
   GitStackedAction,
 } from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
-import { ArchiveIcon, ArchiveRestoreIcon, MessageSquareIcon, RotateCcwIcon } from "lucide-react";
+import {
+  ArchiveIcon,
+  ArchiveRestoreIcon,
+  MessageSquareIcon,
+  RotateCcwIcon,
+  SquareIcon,
+} from "lucide-react";
 import { useState } from "react";
 
 import BaseGitActionsControl from "../components/GitActionsControl";
@@ -31,9 +38,11 @@ import { Textarea } from "../components/ui/textarea";
 import { isElectron } from "../env";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { cn } from "../lib/utils";
-import { useThreadShell } from "../state/entities";
+import { useProject, useThreadShell } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
+import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
+import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { GeasRunDot, GeasStatusIcon } from "./geasPresentation";
@@ -103,6 +112,7 @@ function GeasHeaderControls({
   const update = useAtomCommand(grimoireAtoms.update, { label: "geas status" });
   const runAgain = useAtomCommand(grimoireAtoms.runAgain, { label: "geas run again" });
   const archive = useAtomCommand(grimoireAtoms.archive, { label: "geas archive" });
+  const interrupt = useOrchestrationCommand(threadEnvironment.interruptTurn, "stop geas run");
   return (
     <div
       className="flex items-center gap-1 [-webkit-app-region:no-drag]"
@@ -123,15 +133,27 @@ function GeasHeaderControls({
           Open thread
         </Button>
       ) : null}
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Run again"
-        disabled={!canOperate || geas.runState !== "idle"}
-        onClick={() => void runAgain({ environmentId, input: { geasId: geas.id } })}
-      >
-        <RotateCcwIcon />
-      </Button>
+      {geas.runState !== "idle" && geas.threadId !== null ? (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Stop the run"
+          disabled={!canOperate}
+          onClick={() => void interrupt({ environmentId, input: { threadId: geas.threadId! } })}
+        >
+          <SquareIcon />
+        </Button>
+      ) : (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Run again"
+          disabled={!canOperate}
+          onClick={() => void runAgain({ environmentId, input: { geasId: geas.id } })}
+        >
+          <RotateCcwIcon />
+        </Button>
+      )}
       <Button
         variant="ghost"
         size="icon-sm"
@@ -247,6 +269,13 @@ function DeliveryBar({
 }) {
   const threadRef = geas.threadId === null ? null : scopeThreadRef(environmentId, geas.threadId);
   const shell = useThreadShell(threadRef);
+  const project = useProject(scopeProjectRef(environmentId, geas.projectId));
+  const gitCwd = project
+    ? projectScriptCwd({
+        project: { cwd: project.workspaceRoot },
+        worktreePath: shell?.worktreePath ?? null,
+      })
+    : null;
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
       {geas.settings.deliveryActions.map((action, index) => (
@@ -261,8 +290,13 @@ function DeliveryBar({
         </Button>
       ))}
       <div className="min-w-0 flex-1" />
-      {shell?.worktreePath ? (
-        <BaseGitActionsControl gitCwd={shell.worktreePath} activeThreadRef={threadRef} compact />
+      {gitCwd !== null ? (
+        <BaseGitActionsControl
+          gitCwd={gitCwd}
+          name={project?.title ?? ""}
+          activeThreadRef={threadRef}
+          compact
+        />
       ) : null}
     </div>
   );
