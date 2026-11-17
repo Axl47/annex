@@ -23,7 +23,8 @@ a run failed, or a run ended without handing back a report.
 - A comment reaches a running agent right away when its provider supports steering (Claude and
   Codex). Other providers read it when their next run starts. When no run is going, a comment starts
   one.
-- Buttons under an agent's comment answer it. Only the latest unanswered ask has live buttons.
+- Buttons under an agent's comment answer it. When it offers options, tick any and choose **Send**.
+  Only the latest unanswered ask has live buttons.
 - When a geas is in review, the delivery buttons send their prompt to the agent. **Land it** sends
   "Land this.", which runs your land skill if you have one.
 - Moving a geas to **Done** or **Canceled** settles its thread; moving it back unsettles it. A geas
