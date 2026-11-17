@@ -24,6 +24,7 @@ import {
 } from "../SidebarStageBackdrop";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { AnnexSidebarItems } from "../../annex/AnnexSidebarItems";
 import {
   SidebarFooter,
   SidebarMenu,
@@ -300,6 +301,7 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
               onClick={handleIssuesClick}
             />
           ) : null}
+          <AnnexSidebarItems Item={SidebarUtilityItem} onNavigate={closeMobileSidebar} />
           <SidebarUtilityItem
             icon={<ChartNoAxesColumnIcon />}
             label={gt("Usage")}

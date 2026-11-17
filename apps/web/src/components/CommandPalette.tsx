@@ -237,6 +237,7 @@ import {
   reduceCommandPaletteSearchState,
   type SearchOverlayMode,
 } from "./CommandPalette.logic";
+import { annexPaletteActions } from "../annex/paletteActions";
 import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
 import { CommandPaletteContent, type PendingInputSelection } from "./CommandPaletteContent";
 import {
@@ -1768,6 +1769,7 @@ function OpenCommandPaletteDialog(props: {
       },
     });
   }
+  actionItems.push(...annexPaletteActions(navigate));
 
   actionItems.push({
     kind: "action",
