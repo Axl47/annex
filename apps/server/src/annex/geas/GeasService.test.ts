@@ -225,4 +225,48 @@ describe("GeasService", () => {
       assert.include(harness.dispatched, "settle");
     }).pipe(Effect.provide(harness.layer));
   });
+
+  it.effect("launches a new thread after the geas's thread is deleted", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const geas = yield* GeasService.GeasService;
+      const { geasId } = yield* enact(geas);
+      const threadId = harness.launches[0]!.threadId!;
+      yield* geas.handleEvent({
+        type: "thread.deleted",
+        threadId,
+      } as unknown as OrchestrationV2DomainEvent);
+      const orphaned = yield* detailOf(geas, geasId);
+      assert.strictEqual(orphaned.threadId, null);
+      assert.strictEqual(orphaned.runState, "idle");
+
+      yield* geas.comment({ geasId, body: "Pick it back up." });
+      assert.strictEqual(harness.launches.length, 2);
+      assert.notStrictEqual(harness.launches[1]?.threadId, threadId);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("never hands a new project a prefix whose keys another project issued", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const geas = yield* GeasService.GeasService;
+      yield* enact(geas);
+      yield* geas.updateProjectSettings({ projectId, keyPrefix: "AX" });
+      const other = yield* geas.enact(
+        {
+          projectId: ProjectId.make("project-other"),
+          request: "Another Annex project.",
+          workspace: { type: "worktree", baseRef: "main" },
+          modelSelection,
+          backlog: true,
+        },
+        { actor: "user", creationSource: "web" },
+      );
+      assert.strictEqual(other.key, "ANX2-1");
+      const clash = yield* geas
+        .updateProjectSettings({ projectId: ProjectId.make("project-other"), keyPrefix: "ANX" })
+        .pipe(Effect.flip);
+      assert.strictEqual(clash._tag, "GeasError");
+    }).pipe(Effect.provide(harness.layer));
+  });
 });
