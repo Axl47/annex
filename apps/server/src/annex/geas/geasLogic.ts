@@ -182,6 +182,8 @@ function renderReportSummary(report: GeasReport): string {
   return lines.length === 0 ? "Empty." : lines.join("\n");
 }
 
+const EARLIER_COMMENT_LIMIT = 20;
+
 export interface RunMessageInput {
   readonly key: string;
   readonly title: string;
@@ -209,11 +211,25 @@ export function renderRunMessage(input: RunMessageInput): string {
   if (previousRunStart !== -1) {
     const fresh = input.activity
       .slice(previousRunStart + 1)
-      .filter(
-        (activity) =>
-          activity.author === "user" &&
-          (activity.kind === "comment" || activity.eventType === "status_changed"),
+      .filter((activity) =>
+        activity.kind === "comment"
+          ? activity.author === "user"
+          : activity.author !== "agent" && activity.eventType === "status_changed",
       );
+    // Each run starts a fresh session, so earlier answers and questions only reach it here.
+    const earlier = input.activity
+      .filter((activity) => activity.kind === "comment" && !fresh.includes(activity))
+      .slice(-EARLIER_COMMENT_LIMIT);
+    if (earlier.length > 0) {
+      sections.push(
+        `## Conversation so far\n${earlier
+          .map(
+            (activity) =>
+              `- ${activity.author === "user" ? "User" : "Agent"} (${activity.createdAt}): ${truncate(activity.body, 600)}`,
+          )
+          .join("\n")}`,
+      );
+    }
     if (fresh.length > 0) {
       sections.push(
         `## New since your last run\n${fresh

@@ -138,7 +138,7 @@ describe("needsYou", () => {
 });
 
 describe("renderRunMessage", () => {
-  it("shows a later run only what the user added since the previous one", () => {
+  it("shows a later run what changed since the previous one, after the conversation so far", () => {
     const message = renderRunMessage({
       key: "ANX-1",
       title: "Fix it",
@@ -158,12 +158,16 @@ describe("renderRunMessage", () => {
         activity({ eventType: "run_started" }),
         activity({ kind: "comment", author: "user", body: "new note" }),
         activity({ kind: "comment", author: "agent", body: "agent note" }),
+        activity({ eventType: "status_changed", body: "Annex moved it to Done." }),
       ],
       previousFinalResponse: "Did half.",
     });
-    expect(message).toContain("- User: new note");
-    expect(message).not.toContain("old note");
-    expect(message).not.toContain("agent note");
+    expect(message).toContain(
+      "## Conversation so far\n- User (2026-11-17T10:00:00.000Z): old note\n- Agent (2026-11-17T10:00:00.000Z): agent note",
+    );
+    expect(message).toContain(
+      "## New since your last run\n- User: new note\n- Annex moved it to Done.",
+    );
     expect(message).toContain("## Your last response\nDid half.");
     expect(message).toContain("expectedRevision 3");
     expect(message).toContain("This project adds:\nUse pnpm.");
