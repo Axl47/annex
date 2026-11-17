@@ -640,6 +640,9 @@ const make = Effect.gen(function* () {
         updated_at = ${startedAt}
       WHERE geas_id = ${row.geas_id}
     `);
+    // Before run_started, so the next run's "new since" skips this run's own start.
+    const current = yield* requireGeas(input.geasId);
+    if (current.status !== "in_progress") yield* setStatus(current, "in_progress", "server");
     yield* insertActivity({
       geasId: row.geas_id,
       kind: "event",
@@ -648,8 +651,6 @@ const make = Effect.gen(function* () {
       body: `Run started on ${modelSelection.model}.`,
       runId,
     });
-    const current = yield* requireGeas(input.geasId);
-    if (current.status !== "in_progress") yield* setStatus(current, "in_progress", "server");
     yield* refresh(row.geas_id);
   });
 
