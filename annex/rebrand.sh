@@ -18,6 +18,20 @@ sub 's/const APP_BASE_NAME = "T3 Code";/const APP_BASE_NAME = "Annex";/;
 # reach the app, and legacy profile names stay upstream's so Windows keeps migrating credential keys.
 sub 's/current: "t3code-dev",/current: "annex-dev",/; s/current: "t3code-v2",/current: "annex",/' apps/desktop/src/app/DesktopUserData.ts
 
+# Windows: every build's package is named t3code, and NSIS installs per-user apps into
+# Programs\<package name>, so Annex would overwrite an installed T3 Code. Default Annex's own
+# install location (stored under its app id's registry key) to Programs\annex instead.
+grep -q 'Annex: own install folder' apps/desktop/resources/installer.nsh || cat >> apps/desktop/resources/installer.nsh <<'NSH'
+
+; Annex: own install folder, so it never installs over T3 Code (both packages are named t3code).
+!macro preInit
+  ReadRegStr $0 HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation
+  ${If} $0 == ""
+    WriteRegExpandStr HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation "$LOCALAPPDATA\Programs\annex"
+  ${EndIf}
+!macroend
+NSH
+
 # Mobile: production variant identity; upstream OTA updates target the official app, so they stay off.
 sub 's/appName: "T3 Code",\n(\s*)scheme: "t3code",\n(\s*)iosBundleIdentifier: "com\.t3tools\.t3code",\n(\s*)androidPackage: "com\.t3tools\.t3code",/appName: "Annex",\n$1scheme: "annex",\n$2iosBundleIdentifier: "dev.axl47.annex",\n$3androidPackage: "dev.axl47.annex",/;
      s/enabled: repoEnv\.T3CODE_MOBILE_UPDATES_ENABLED !== "0",/enabled: false,/' apps/mobile/app.config.ts
@@ -88,6 +102,7 @@ expect apps/desktop/src/app/DesktopEnvironment.ts '"dev.axl47.annex.dev" : "dev.
 expect apps/desktop/src/app/DesktopUserData.ts 'current: "annex",'
 expect apps/mobile/app.config.ts 'androidPackage: "dev.axl47.annex",'
 expect apps/mobile/app.config.ts 'enabled: false,'
+expect apps/desktop/resources/installer.nsh '!macro preInit'
 expect apps/mobile/app.config.ts 'androidAdaptiveBackgroundColor: "#0b1222",'
 expect apps/web/src/components/T3Wordmark.tsx 'viewBox="0 0 60 57"'
 expect apps/mobile/src/components/T3Wordmark.tsx 'viewBox="0 0 60 57"'
