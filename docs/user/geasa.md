@@ -33,8 +33,9 @@ a run failed, or a run ended without handing back a report.
 
 The agent declares each check as the exact command it ran. Annex marks the check passed or failed
 from that command's real exit code in the thread, or **not verified** when it never saw the command
-run. In the Grimoire settings, list the check commands a project vouches for; once any are listed,
-only declared commands that contain one of them can pass.
+run, or saw it run behind a pipe, `;` or `|| true` that could hide its exit code. In the Grimoire
+settings, list the check commands a project vouches for; once any are listed, only declared commands
+that start with one of them can pass.
 
 ## Project settings
 
