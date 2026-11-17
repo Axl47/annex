@@ -39,13 +39,13 @@ export function CompactBrandTitle(
         props.fit && showStage ? (event) => setFullWidth(event.nativeEvent.layout.width) : undefined
       }
       aria-level={1}
-      accessibilityLabel={props.accessibilityLabel ?? "T3 Code, Threads"}
+      accessibilityLabel={props.accessibilityLabel ?? "Annex, Threads"}
       accessible
       role="heading"
-      className="flex-row items-center gap-1.5"
+      className="flex-row items-center gap-px"
       style={[
         { marginLeft: titleOffset },
-        Platform.OS === "android" && { gap: 5.25 * scale },
+        Platform.OS === "android" && { gap: 1 * scale },
         props.fit && { flexShrink: 0 },
       ]}
     >
@@ -57,7 +57,7 @@ export function CompactBrandTitle(
         className="font-t3-medium text-foreground-muted"
         style={{ fontSize: 21 * scale, letterSpacing: -0.5 * scale }}
       >
-        Code
+        nnex
       </Text>
       {showStage ? (
         <View
