@@ -1,5 +1,5 @@
 import type { useNavigate } from "@tanstack/react-router";
-import { BookOpenIcon } from "lucide-react";
+import { BookOpenIcon, ScrollTextIcon } from "lucide-react";
 
 import { ITEM_ICON_CLASS, type CommandPaletteActionItem } from "../components/CommandPalette.logic";
 
@@ -16,6 +16,16 @@ export function annexPaletteActions(
       icon: <BookOpenIcon className={ITEM_ICON_CLASS} />,
       run: async () => {
         await navigate({ to: "/grimoire" });
+      },
+    },
+    {
+      kind: "action",
+      value: "action:enact-geas",
+      searchTerms: ["enact", "geas", "new geas", "issue", "task", "annex"],
+      title: "Enact a geas",
+      icon: <ScrollTextIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await navigate({ to: "/grimoire", search: { enact: true } });
       },
     },
   ];
