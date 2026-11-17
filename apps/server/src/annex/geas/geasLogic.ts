@@ -42,7 +42,7 @@ const REDIRECTS = /\d*>&\d+/g;
 const masksExitCode = (command: string) =>
   /[|;&]/.test(command.replace(REDIRECTS, "").replaceAll("&&", ""));
 // A command starts at the beginning, after `&&`, `;` or `(`, or inside a `sh -c '…'` wrapper.
-const COMMAND_START = /(?:^|&&|;|\(|\s-l?c\s+['"]?)\s*$/;
+const COMMAND_START = /(?:^|&&|;|\(|\b(?:sh|bash|zsh)\s+-l?c\s+['"]?)\s*$/;
 
 /** The executed command ran the declared one as a command whose exit code is its own. */
 function ranAsCommand(executed: string, declared: string): boolean {
