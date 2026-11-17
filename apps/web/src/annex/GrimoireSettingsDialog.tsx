@@ -251,7 +251,7 @@ export function GrimoireSettingsDialog({
               </div>
               <Section
                 label="Checks"
-                hint="Commands this project vouches for. A report check passes only when its command contains one of these and exited 0."
+                hint="Commands this project vouches for. A report check passes only when its command starts with one of these and exited 0."
               >
                 <PairList
                   rows={draft.checks}
