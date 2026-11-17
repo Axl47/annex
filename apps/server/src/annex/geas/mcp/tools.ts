@@ -98,7 +98,7 @@ const GeasAttachMediaTool = geasTool(
   Tool.make("geas_attach_media", {
     ...shared,
     description:
-      "Store a screenshot or a short clip (up to 50 MB) from this checkout for the report. Returns the attachmentId to use in a compare or media proof block.",
+      "Store a screenshot or a short clip (up to 50 MB) for the report; a relative path resolves in this checkout. Returns the attachmentId to use in a compare or media proof block.",
     parameters: Schema.Struct({
       path: TrimmedNonEmptyString.annotate({
         description: "The file, absolute or relative to this thread's checkout.",
