@@ -168,6 +168,7 @@ export const GeasEventType = Schema.Literals([
   "status_changed",
   "report_updated",
   "loop_guard",
+  "comment_queued",
 ]);
 export type GeasEventType = typeof GeasEventType.Type;
 
