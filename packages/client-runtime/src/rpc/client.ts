@@ -4,6 +4,7 @@ import {
   authScopeRequiredResponse,
   type EnvironmentId,
   type ClientGuardedRpcTag,
+  type AnnexSubscriptionRpcTag,
   ORCHESTRATION_V2_WS_METHODS,
   WS_METHODS,
 } from "@t3tools/contracts";
@@ -60,6 +61,7 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.subscribeServerConfig
   | typeof WS_METHODS.subscribeServerLifecycle
   | typeof WS_METHODS.scheduledTasksSubscribe
+  | AnnexSubscriptionRpcTag
   | typeof WS_METHODS.serverGetStorageCleanupReport
   | typeof WS_METHODS.serverGetDatabaseStorage
   | typeof WS_METHODS.subscribeTerminalMetadata
