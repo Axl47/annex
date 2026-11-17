@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, GrimoireRow } from "@t3tools/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { BookOpenIcon, PlusIcon, Settings2Icon } from "lucide-react";
+import { ArchiveIcon, BookOpenIcon, PlusIcon, Settings2Icon } from "lucide-react";
 import { useState } from "react";
 
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../components/WorkspaceBreadcrumb";
@@ -82,7 +82,13 @@ function Grimoire({
     }
   };
   const [configuring, setConfiguring] = useState(false);
-  const query = useEnvironmentQuery(grimoireAtoms.grimoire({ environmentId, input: {} }));
+  const [showArchived, setShowArchived] = useState(false);
+  const query = useEnvironmentQuery(
+    grimoireAtoms.grimoire({
+      environmentId,
+      input: showArchived ? { includeArchived: true } : {},
+    }),
+  );
   const canEnact = useAtomValue(grimoireAtoms.enact.permissionAtom(environmentId));
   const projects = useProjects();
   const projectTitles = new Map(
@@ -131,6 +137,15 @@ function Grimoire({
                 </SelectPopup>
               </Select>
             ) : null}
+            <Button
+              variant={showArchived ? "secondary" : "ghost"}
+              size="icon-sm"
+              aria-label={showArchived ? "Hide archived" : "Show archived"}
+              aria-pressed={showArchived}
+              onClick={() => setShowArchived((current) => !current)}
+            >
+              <ArchiveIcon />
+            </Button>
             <Button
               variant="ghost"
               size="icon-sm"

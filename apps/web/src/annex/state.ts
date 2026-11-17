@@ -35,7 +35,7 @@ export const GEAS_STATUS_LABELS: Record<GeasStatus, string> = {
   canceled: "Canceled",
 };
 
-export type GrimoireGroupId = "needs_you" | GeasStatus;
+export type GrimoireGroupId = "needs_you" | GeasStatus | "archived";
 
 const GROUP_ORDER: ReadonlyArray<GrimoireGroupId> = [
   "needs_you",
@@ -45,11 +45,13 @@ const GROUP_ORDER: ReadonlyArray<GrimoireGroupId> = [
   "backlog",
   "done",
   "canceled",
+  "archived",
 ];
 
 const GROUP_LABELS: Record<GrimoireGroupId, string> = {
   needs_you: "Needs you",
   ...GEAS_STATUS_LABELS,
+  archived: "Archived",
 };
 
 /** Needs-you pulls a geas out of its status group, so each geas shows once. */
@@ -57,7 +59,11 @@ export function groupGrimoire(rows: ReadonlyArray<GrimoireRow>) {
   const groups = new Map<GrimoireGroupId, Array<GrimoireRow>>();
   for (const row of rows) {
     const id: GrimoireGroupId =
-      row.needsYou && row.status !== "done" && row.status !== "canceled" ? "needs_you" : row.status;
+      row.archivedAt !== null
+        ? "archived"
+        : row.needsYou && row.status !== "done" && row.status !== "canceled"
+          ? "needs_you"
+          : row.status;
     const group = groups.get(id) ?? [];
     group.push(row);
     groups.set(id, group);
