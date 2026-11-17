@@ -14,6 +14,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ann
 - macOS keeps granted permissions, such as screen recording, across Annex updates.
 - `t3 update` and remote server updates install Annex's server builds.
 - The Android app installs alongside the official T3 Code app and updates from Annex's signed APKs.
+- On Windows, Annex installs in its own folder, next to T3 Code.
 
 ### Changed
 
