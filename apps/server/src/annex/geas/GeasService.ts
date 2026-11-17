@@ -185,7 +185,26 @@ const toSettings = (row: SettingsRow): GrimoireProjectSettings => ({
   rules: row.rules,
 });
 
-const toListRow = (row: GeasRow): GrimoireRow => ({
+const LIST_COLUMNS = [
+  "geas_id",
+  "project_id",
+  "geas_key",
+  "title",
+  "status",
+  "priority",
+  "labels_json",
+  "thread_id",
+  "run_state",
+  "needs_you",
+  "model_selection_json",
+  "created_at",
+  "updated_at",
+  "last_activity_at",
+  "archived_at",
+] as const;
+type ListColumns = Pick<GeasRow, (typeof LIST_COLUMNS)[number]>;
+
+const toListRow = (row: ListColumns): GrimoireRow => ({
   id: GeasId.make(row.geas_id),
   projectId: ProjectId.make(row.project_id),
   key: row.geas_key,
@@ -310,8 +329,9 @@ const make = Effect.gen(function* () {
 
   yield* runAnnexMigrations.pipe(Effect.orDie);
 
-  const changes = yield* PubSub.sliding<GeasId>(256);
-  const publish = (geasId: GeasId) => PubSub.publish(changes, geasId).pipe(Effect.asVoid);
+  // `null` means every geas changed, e.g. after a project settings save.
+  const changes = yield* PubSub.sliding<GeasId | null>(256);
+  const publish = (geasId: GeasId | null) => PubSub.publish(changes, geasId).pipe(Effect.asVoid);
   // One writer per geas, so status, report and run bookkeeping never interleave.
   const locks = new Map<string, Semaphore.Semaphore>();
   const withLock =
@@ -379,10 +399,15 @@ const make = Effect.gen(function* () {
     const base = deriveKeyPrefix(
       Option.match(project, { onNone: () => "", onSome: (p) => p.title }),
     );
-    // Two projects can derive the same prefix; keys must stay unique per environment.
+    // Two projects can derive the same prefix, or reuse one another dropped; keys stay unique.
     const taken = new Set(
       (yield* orDie(
-        sql<{ key_prefix: string }>`SELECT key_prefix FROM annex_project_settings`,
+        sql<{ key_prefix: string }>`
+          SELECT key_prefix FROM annex_project_settings
+          UNION
+          SELECT substr(geas_key, 1, instr(geas_key, '-') - 1) FROM annex_geas
+          WHERE project_id != ${projectId}
+        `,
       )).map((row) => row.key_prefix),
     );
     let prefix = base;
@@ -533,126 +558,130 @@ const make = Effect.gen(function* () {
   });
 
   /** Starts a fresh run: the first launches the geas's thread, later ones send to it. */
-  const startRun = Effect.fn("GeasService.startRun")(function* (input: {
-    readonly geasId: GeasId;
-    readonly startedBy: "user" | "agent";
-    readonly creationSource: OrchestrationV2CreationSource;
-    readonly modelSelection?: ModelSelection;
-  }) {
-    const row = yield* requireGeas(input.geasId);
-    if (input.startedBy === "agent" && row.agent_runs_since_user >= GEAS_AGENT_RUN_LIMIT) {
-      yield* insertActivity({
-        geasId: row.geas_id,
-        kind: "event",
-        eventType: "loop_guard",
-        author: "server",
-        body: `Agents started ${GEAS_AGENT_RUN_LIMIT} runs since your last comment, so Annex is waiting for you.`,
-      });
-      return yield* new GeasError({
-        message: "Agents started too many runs on this geas; it waits for the user now.",
-        geasId: input.geasId,
-      });
-    }
-    const text = yield* runMessage(input.geasId);
-    const runId = yield* newId("geas-run");
-    const modelSelection =
-      input.modelSelection ?? ModelSelectionJson.decode(row.model_selection_json);
-    const messageId = MessageId.make(`annex-geas-message:${runId}`);
-    const commandId = CommandId.make(`annex-geas-run:${runId}`);
-    let threadId = row.thread_id === null ? null : ThreadId.make(row.thread_id);
-    let threadRunId: string | null;
-    if (threadId === null) {
-      // Claimed before launch, so the reactor already follows a first run that ends quickly.
-      const claimed = ThreadId.make(yield* randomUuidV4);
-      geasThreads.add(claimed);
-      yield* orDie(
-        sql`UPDATE annex_geas SET thread_id = ${claimed} WHERE geas_id = ${row.geas_id}`,
-      );
-      const launched = yield* threadLaunch
-        .launch({
-          commandId,
-          threadId: claimed,
-          projectId: ProjectId.make(row.project_id),
-          title: `${row.geas_key} · ${row.title}`,
-          generateTitle: false,
-          modelSelection,
-          runtimeMode: row.runtime_mode,
-          interactionMode: row.interaction_mode,
-          workspaceStrategy: WorkspaceJson.decode(row.workspace_json),
-          initialMessage: { messageId, text, attachments: [] },
-          createdBy: input.startedBy,
-          creationSource: input.creationSource,
-        })
-        .pipe(
-          Effect.tapError(() =>
-            Effect.andThen(
-              Effect.sync(() => geasThreads.delete(claimed)),
-              orDie(sql`UPDATE annex_geas SET thread_id = NULL WHERE geas_id = ${row.geas_id}`),
+  const startRun = Effect.fn("GeasService.startRun")(
+    function* (input: {
+      readonly geasId: GeasId;
+      readonly startedBy: "user" | "agent";
+      readonly creationSource: OrchestrationV2CreationSource;
+      readonly modelSelection?: ModelSelection;
+    }) {
+      const row = yield* requireGeas(input.geasId);
+      if (input.startedBy === "agent" && row.agent_runs_since_user >= GEAS_AGENT_RUN_LIMIT) {
+        yield* insertActivity({
+          geasId: row.geas_id,
+          kind: "event",
+          eventType: "loop_guard",
+          author: "server",
+          body: `Agents started ${GEAS_AGENT_RUN_LIMIT} runs since your last comment, so Annex is waiting for you.`,
+        });
+        return yield* new GeasError({
+          message: "Agents started too many runs on this geas; it waits for the user now.",
+          geasId: input.geasId,
+        });
+      }
+      const text = yield* runMessage(input.geasId);
+      const runId = yield* newId("geas-run");
+      const modelSelection =
+        input.modelSelection ?? ModelSelectionJson.decode(row.model_selection_json);
+      const messageId = MessageId.make(`annex-geas-message:${runId}`);
+      const commandId = CommandId.make(`annex-geas-run:${runId}`);
+      let threadId = row.thread_id === null ? null : ThreadId.make(row.thread_id);
+      let threadRunId: string | null;
+      if (threadId === null) {
+        // Claimed before launch, so the reactor already follows a first run that ends quickly.
+        const claimed = ThreadId.make(yield* randomUuidV4);
+        geasThreads.add(claimed);
+        yield* orDie(
+          sql`UPDATE annex_geas SET thread_id = ${claimed} WHERE geas_id = ${row.geas_id}`,
+        );
+        const launched = yield* threadLaunch
+          .launch({
+            commandId,
+            threadId: claimed,
+            projectId: ProjectId.make(row.project_id),
+            title: `${row.geas_key} · ${row.title}`,
+            generateTitle: false,
+            modelSelection,
+            runtimeMode: row.runtime_mode,
+            interactionMode: row.interaction_mode,
+            workspaceStrategy: WorkspaceJson.decode(row.workspace_json),
+            initialMessage: { messageId, text, attachments: [] },
+            createdBy: input.startedBy,
+            creationSource: input.creationSource,
+          })
+          .pipe(
+            Effect.onError(() =>
+              Effect.andThen(
+                Effect.sync(() => geasThreads.delete(claimed)),
+                orDie(sql`UPDATE annex_geas SET thread_id = NULL WHERE geas_id = ${row.geas_id}`),
+              ),
             ),
-          ),
-          Effect.mapError(failWith("Could not start the geas's thread.", input.geasId)),
-        );
-      threadId = launched.threadId;
-      threadRunId =
-        launched.projection.runs.find((run) => run.userMessageId === messageId)?.id ?? null;
-      // A geas can sit in review for days; only Done settles its thread.
-      yield* threads
-        .dispatch({
-          type: "thread.auto-settle.set",
-          commandId: CommandId.make(`annex-geas-auto-settle:${row.geas_id}`),
-          threadId,
-          enabled: false,
-        })
-        .pipe(
-          Effect.catchCause((cause) =>
-            Effect.logWarning("geas auto-settle opt-out failed", { cause }),
-          ),
-        );
-    } else {
-      const sent = yield* threads
-        .sendToThread({
-          projectId: ProjectId.make(row.project_id),
-          commandId,
-          threadId,
-          messageId,
-          text,
-          attachments: [],
-          ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
-          mode: "queue",
-          freshContext: true,
-          createdBy: input.startedBy,
-          creationSource: input.creationSource,
-        })
-        .pipe(Effect.mapError(failWith("Could not start a run.", input.geasId)));
-      threadRunId = sent.run.id;
-    }
-    const startedAt = yield* now;
-    yield* orDie(sql`
+            Effect.mapError(failWith("Could not start the geas's thread.", input.geasId)),
+          );
+        threadId = launched.threadId;
+        threadRunId =
+          launched.projection.runs.find((run) => run.userMessageId === messageId)?.id ?? null;
+        // A geas can sit in review for days; only Done settles its thread.
+        yield* threads
+          .dispatch({
+            type: "thread.auto-settle.set",
+            commandId: CommandId.make(`annex-geas-auto-settle:${row.geas_id}`),
+            threadId,
+            enabled: false,
+          })
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("geas auto-settle opt-out failed", { cause }),
+            ),
+          );
+      } else {
+        const sent = yield* threads
+          .sendToThread({
+            projectId: ProjectId.make(row.project_id),
+            commandId,
+            threadId,
+            messageId,
+            text,
+            attachments: [],
+            ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
+            mode: "queue",
+            freshContext: true,
+            createdBy: input.startedBy,
+            creationSource: input.creationSource,
+          })
+          .pipe(Effect.mapError(failWith("Could not start a run.", input.geasId)));
+        threadRunId = sent.run.id;
+      }
+      const startedAt = yield* now;
+      yield* orDie(sql`
       INSERT INTO annex_geas_runs (run_id, geas_id, thread_run_id, started_by, model_selection_json, started_at)
       VALUES (${runId}, ${row.geas_id}, ${threadRunId}, ${input.startedBy},
               ${ModelSelectionJson.encode(modelSelection)}, ${startedAt})
     `);
-    yield* orDie(sql`
+      yield* orDie(sql`
       UPDATE annex_geas SET
-        run_state = 'running',
+        run_state = CASE WHEN run_state = 'waiting' THEN 'waiting' ELSE 'running' END,
         model_selection_json = ${ModelSelectionJson.encode(modelSelection)},
         agent_runs_since_user = agent_runs_since_user + ${input.startedBy === "agent" ? 1 : 0},
         updated_at = ${startedAt}
       WHERE geas_id = ${row.geas_id}
     `);
-    // Before run_started, so the next run's "new since" skips this run's own start.
-    const current = yield* requireGeas(input.geasId);
-    if (current.status !== "in_progress") yield* setStatus(current, "in_progress", "server");
-    yield* insertActivity({
-      geasId: row.geas_id,
-      kind: "event",
-      eventType: "run_started",
-      author: "server",
-      body: `Run started on ${modelSelection.model}.`,
-      runId,
-    });
-    yield* refresh(row.geas_id);
-  });
+      // Before run_started, so the next run's "new since" skips this run's own start.
+      const current = yield* requireGeas(input.geasId);
+      if (current.status !== "in_progress") yield* setStatus(current, "in_progress", "server");
+      yield* insertActivity({
+        geasId: row.geas_id,
+        kind: "event",
+        eventType: "run_started",
+        author: "server",
+        body: `Run started on ${modelSelection.model}.`,
+        runId,
+      });
+      yield* refresh(row.geas_id);
+    },
+    // A client leaving mid-launch must not strand the geas on a half-claimed thread.
+    Effect.uninterruptible,
+  );
 
   /** Your comment steers an active run, or starts the next one. */
   const postUserComment = Effect.fn("GeasService.postUserComment")(function* (
@@ -871,6 +900,9 @@ const make = Effect.gen(function* () {
         sql<{ project_id: string }>`
           SELECT project_id FROM annex_project_settings
           WHERE key_prefix = ${input.keyPrefix} AND project_id != ${input.projectId}
+          UNION
+          SELECT project_id FROM annex_geas
+          WHERE geas_key LIKE ${`${input.keyPrefix}-%`} AND project_id != ${input.projectId}
         `,
       );
       if (clash.length > 0) {
@@ -888,23 +920,20 @@ const make = Effect.gen(function* () {
         rules = ${input.rules ?? current.rules}
       WHERE project_id = ${input.projectId}
     `);
-    const geasa = yield* orDie(
-      sql<{
-        geas_id: string;
-      }>`SELECT geas_id FROM annex_geas WHERE project_id = ${input.projectId}`,
-    );
-    yield* Effect.forEach(geasa, (row) => publish(GeasId.make(row.geas_id)), { discard: true });
+    yield* publish(null);
     return toSettings(yield* ensureSettings(input.projectId));
   });
 
   const listSnapshot = Effect.fn("GeasService.listSnapshot")(function* (
     input: GrimoireSubscribeInput,
   ) {
+    const columns = sql.literal(LIST_COLUMNS.join(", "));
     const rows = yield* orDie(
       input.includeArchived === true
-        ? sql<GeasRow>`SELECT * FROM annex_geas ORDER BY last_activity_at DESC`
-        : sql<GeasRow>`
-            SELECT * FROM annex_geas WHERE archived_at IS NULL ORDER BY last_activity_at DESC
+        ? sql<ListColumns>`SELECT ${columns} FROM annex_geas ORDER BY last_activity_at DESC`
+        : sql<ListColumns>`
+            SELECT ${columns} FROM annex_geas WHERE archived_at IS NULL
+            ORDER BY last_activity_at DESC
           `,
     );
     const settings = yield* orDie(sql<SettingsRow>`SELECT * FROM annex_project_settings`);
@@ -917,7 +946,11 @@ const make = Effect.gen(function* () {
         const subscription = yield* PubSub.subscribe(changes);
         return Stream.concat(
           Stream.fromEffect(listSnapshot(input)),
-          Stream.fromSubscription(subscription).pipe(Stream.mapEffect(() => listSnapshot(input))),
+          Stream.fromSubscription(subscription).pipe(
+            // Changes landing during a read collapse into one more snapshot.
+            Stream.buffer({ capacity: 1, strategy: "sliding" }),
+            Stream.mapEffect(() => listSnapshot(input)),
+          ),
         );
       }),
     );
@@ -929,7 +962,8 @@ const make = Effect.gen(function* () {
         return Stream.concat(
           Stream.fromEffect(readDetail(geasId)),
           Stream.fromSubscription(subscription).pipe(
-            Stream.filter((changed) => changed === geasId),
+            Stream.filter((changed) => changed === geasId || changed === null),
+            Stream.buffer({ capacity: 1, strategy: "sliding" }),
             Stream.mapEffect(() => readDetail(geasId)),
           ),
         );
@@ -1085,7 +1119,11 @@ const make = Effect.gen(function* () {
           message: "Pass an absolute path; this geas has no checkout.",
         });
       }
-      const source = cwd === undefined ? input.path : path.resolve(cwd, input.path);
+      const given = cwd === undefined ? input.path : path.resolve(cwd, input.path);
+      // The real file decides, so a media-named symlink can't copy out something else.
+      const source = yield* fileSystem
+        .realPath(given)
+        .pipe(Effect.mapError(() => new GeasError({ message: `No file at ${given}.` })));
       const extension = path.extname(source).toLowerCase();
       const kind = SAFE_IMAGE_FILE_EXTENSIONS.has(extension)
         ? ("image" as const)
@@ -1243,35 +1281,80 @@ const make = Effect.gen(function* () {
     yield* refresh(row.geas_id);
   });
 
+  /** The thread is gone: the geas forgets it, and its next run launches a new one. */
+  const onThreadDeleted = Effect.fn("GeasService.onThreadDeleted")(function* (row: GeasRow) {
+    geasThreads.delete(ThreadId.make(row.thread_id!));
+    const endedAt = yield* now;
+    yield* orDie(sql`
+      UPDATE annex_geas_runs SET ended_at = ${endedAt}, outcome = 'interrupted'
+      WHERE geas_id = ${row.geas_id} AND ended_at IS NULL
+    `);
+    yield* orDie(sql`
+      UPDATE annex_geas SET thread_id = NULL, run_state = 'idle' WHERE geas_id = ${row.geas_id}
+    `);
+    yield* insertActivity({
+      geasId: row.geas_id,
+      kind: "event",
+      eventType: "thread_deleted",
+      author: "server",
+      body: "Its thread was deleted, so the next run starts a new one.",
+    });
+    yield* refresh(row.geas_id);
+  });
+
   const handleEvent: GeasService["Service"]["handleEvent"] = Effect.fn("GeasService.handleEvent")(
     function* (event) {
       if (!geasThreads.has(event.threadId)) return;
-      const row = yield* geasForThread(event.threadId);
-      if (row === undefined) return;
-      const locked = withLock(row.geas_id);
       switch (event.type) {
-        case "run.updated": {
-          const run = event.payload;
-          if (isTerminalRunStatus(run.status)) {
-            return yield* locked(
-              Effect.flatMap(selectGeas(row.geas_id), (fresh) =>
-                endRun(fresh ?? row, run.id, run.status as Parameters<typeof endRun>[2]),
-              ),
-            );
-          }
-          const runState: GeasRunState = run.status === "waiting" ? "waiting" : "running";
-          if (row.run_state === runState) return;
-          yield* orDie(
-            sql`UPDATE annex_geas SET run_state = ${runState} WHERE geas_id = ${row.geas_id}`,
-          );
-          return yield* refresh(row.geas_id);
-        }
         case "message.updated": {
           const message = event.payload;
           if (message.role === "assistant" && message.runId !== null) {
             finalResponses.set(message.runId, message.text);
           }
           return;
+        }
+        case "turn-item.updated":
+          if (event.payload.type !== "command_execution" || event.payload.exitCode === undefined) {
+            return;
+          }
+          break;
+        case "run.updated":
+        case "thread.deleted":
+        case "thread.pull-request-link-updated":
+        case "thread.pull-request-synced":
+          break;
+        default:
+          return;
+      }
+      const row = yield* geasForThread(event.threadId);
+      if (row === undefined) return;
+      const locked = withLock(row.geas_id);
+      // Re-read under the lock, so a run start or end in flight is never overwritten.
+      const withFresh = <A, E, R>(f: (fresh: GeasRow) => Effect.Effect<A, E, R>) =>
+        locked(
+          Effect.flatMap(selectGeas(row.geas_id), (fresh) =>
+            fresh === undefined || fresh.thread_id !== event.threadId ? Effect.void : f(fresh),
+          ),
+        );
+      switch (event.type) {
+        case "run.updated": {
+          const run = event.payload;
+          if (isTerminalRunStatus(run.status)) {
+            return yield* withFresh((fresh) =>
+              endRun(fresh, run.id, run.status as Parameters<typeof endRun>[2]),
+            );
+          }
+          const runState: GeasRunState = run.status === "waiting" ? "waiting" : "running";
+          return yield* withFresh((fresh) =>
+            fresh.run_state === runState
+              ? Effect.void
+              : Effect.andThen(
+                  orDie(
+                    sql`UPDATE annex_geas SET run_state = ${runState} WHERE geas_id = ${fresh.geas_id}`,
+                  ),
+                  refresh(fresh.geas_id),
+                ),
+          );
         }
         case "turn-item.updated": {
           const item = event.payload;
@@ -1283,20 +1366,17 @@ const make = Effect.gen(function* () {
             ON CONFLICT (item_id) DO UPDATE SET exit_code = excluded.exit_code,
               completed_at = excluded.completed_at
           `);
-          return yield* locked(
-            Effect.gen(function* () {
-              const fresh = yield* selectGeas(row.geas_id);
-              if (fresh !== undefined && (yield* reverifyChecks(fresh))) {
-                yield* publish(GeasId.make(row.geas_id));
-              }
-            }),
+          return yield* withFresh((fresh) =>
+            Effect.flatMap(reverifyChecks(fresh), (changed) =>
+              changed ? publish(GeasId.make(fresh.geas_id)) : Effect.void,
+            ),
           );
         }
+        case "thread.deleted":
+          return yield* withFresh(onThreadDeleted);
         case "thread.pull-request-link-updated":
         case "thread.pull-request-synced":
-          return yield* locked(onPullRequestChange(row));
-        default:
-          return;
+          return yield* withFresh(onPullRequestChange);
       }
     },
     Effect.catchCause((cause) =>
