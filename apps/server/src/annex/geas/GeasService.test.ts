@@ -27,6 +27,7 @@ function makeHarness() {
   const sends: Array<ThreadManagementService.ThreadManagementSendInput> = [];
   const dispatched: Array<string> = [];
   const shell: { current: unknown } = { current: null };
+  const steerable = { current: true };
   let sent = 0;
   const layer = GeasService.layer.pipe(
     Layer.provide(
@@ -47,11 +48,18 @@ function makeHarness() {
         }),
         Layer.mock(ThreadManagementService.ThreadManagementService)({
           sendToThread: (input) =>
-            Effect.sync(() => {
-              sends.push(input);
-              sent += 1;
-              return { run: { id: `run-sent-${sent}` } } as never;
-            }),
+            input.mode === "steer" && !steerable.current
+              ? Effect.fail(
+                  new ThreadManagementService.ThreadManagementNoSteerableRunError({
+                    threadId: input.threadId,
+                    mode: "steer",
+                  }),
+                )
+              : Effect.sync(() => {
+                  sends.push(input);
+                  sent += 1;
+                  return { run: { id: `run-sent-${sent}` } } as never;
+                }),
           dispatch: (command) =>
             Effect.sync(() => {
               dispatched.push(command.type);
@@ -71,7 +79,7 @@ function makeHarness() {
     ),
     Layer.provideMerge(NodeServices.layer),
   );
-  return { layer, launches, sends, dispatched, shell };
+  return { layer, launches, sends, dispatched, shell, steerable };
 }
 
 const runEnded = (threadId: ThreadId, runId: string, status = "completed") =>
@@ -140,9 +148,27 @@ describe("GeasService", () => {
       const { geasId } = yield* enact(geas);
       yield* geas.comment({ geasId, body: "Stop after the sidebar." });
       assert.strictEqual(harness.sends.length, 1);
-      assert.strictEqual(harness.sends[0]?.mode, "auto");
+      assert.strictEqual(harness.sends[0]?.mode, "steer");
       assert.strictEqual(harness.sends[0]?.text, "New on ANX-1: Stop after the sidebar.");
       assert.strictEqual((yield* detailOf(geas, geasId)).runs.length, 1);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("holds a comment the run can't take and starts a fresh run with it", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const geas = yield* GeasService.GeasService;
+      const { geasId } = yield* enact(geas);
+      const threadId = harness.launches[0]!.threadId!;
+      harness.steerable.current = false;
+      yield* geas.comment({ geasId, body: "Also check mobile." });
+      assert.strictEqual(harness.sends.length, 0);
+
+      yield* geas.handleEvent(runEnded(threadId, "run-1"));
+      const [send] = harness.sends;
+      assert.strictEqual(send?.freshContext, true);
+      assert.include(send?.text, "- User: Also check mobile.");
+      assert.strictEqual((yield* detailOf(geas, geasId)).runs.length, 2);
     }).pipe(Effect.provide(harness.layer));
   });
 
