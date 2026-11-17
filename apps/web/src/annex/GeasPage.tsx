@@ -424,25 +424,65 @@ function SuggestedActions({
               </Button>,
             ];
           case "options":
-            return action.options.map((option) => (
-              <Button
-                key={`${action.label}:${option}`}
-                size="xs"
-                variant="outline"
+            return [
+              <OptionsAction
+                key={action.label}
+                options={action.options}
                 disabled={disabled}
-                onClick={() =>
+                onSend={(selected) =>
                   onAction({
                     type: "options",
                     question: action.label === "" ? question.slice(0, 200) : action.label,
-                    selected: [option],
+                    selected,
                   })
                 }
-              >
-                {option}
-              </Button>
-            ));
+              />,
+            ];
         }
       })}
+    </div>
+  );
+}
+
+/** Tick any of the options; Send answers with all of them in one comment. */
+function OptionsAction({
+  options,
+  disabled,
+  onSend,
+}: {
+  readonly options: ReadonlyArray<string>;
+  readonly disabled: boolean;
+  readonly onSend: (selected: ReadonlyArray<string>) => void;
+}) {
+  const [selected, setSelected] = useState<ReadonlyArray<string>>([]);
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {options.map((option) => {
+        const ticked = selected.includes(option);
+        return (
+          <Button
+            key={option}
+            size="xs"
+            variant={ticked ? "secondary" : "outline"}
+            aria-pressed={ticked}
+            disabled={disabled}
+            onClick={() =>
+              setSelected((current) =>
+                ticked ? current.filter((entry) => entry !== option) : [...current, option],
+              )
+            }
+          >
+            {option}
+          </Button>
+        );
+      })}
+      <Button
+        size="xs"
+        disabled={disabled || selected.length === 0}
+        onClick={() => onSend(options.filter((option) => selected.includes(option)))}
+      >
+        Send
+      </Button>
     </div>
   );
 }
