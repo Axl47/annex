@@ -78,6 +78,28 @@ describe("verifyChecks", () => {
     const checks = verifyChecks([...declared, { label: "Trust me", command: "true" }], ran, listed);
     expect(checks.map((check) => check.status)).toEqual(["passed", "unverified"]);
   });
+
+  it("only counts a run whose exit code is the declared command's own", () => {
+    const check = { label: "Check", command: "scripts/check.sh" };
+    const cases: ReadonlyArray<readonly [string, string, string]> = [
+      ["scripts/check.sh", "scripts/check.sh --record", "passed"],
+      ["scripts/check.sh", "/bin/zsh -lc 'scripts/check.sh'", "passed"],
+      ["scripts/check.sh", "scripts/check.sh 2>&1 && echo ok", "passed"],
+      ["scripts/check.sh", "scripts/check.sh || true", "unverified"],
+      ["scripts/check.sh", "scripts/check.sh 2>&1 | tail -20", "unverified"],
+      ["scripts/check.sh", "scripts/check.sh; echo done", "unverified"],
+      ["scripts/check.sh", "echo scripts/check.sh", "unverified"],
+      ["scripts/check.sh || true", "scripts/check.sh || true", "unverified"],
+    ];
+    for (const [declaredCommand, executed, status] of cases) {
+      const [result] = verifyChecks(
+        [{ ...check, command: declaredCommand }],
+        [{ command: executed, exitCode: 0, completedAt: "t" }],
+        [check],
+      );
+      expect(result?.status, `${declaredCommand} / ${executed}`).toBe(status);
+    }
+  });
 });
 
 describe("needsYou", () => {
