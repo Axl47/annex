@@ -70,6 +70,7 @@ import { EnvironmentToolkit } from "./toolkits/environment/tools.ts";
 import * as EnvironmentHandlers from "./toolkits/environment/handlers.ts";
 import { ThemeToolkit } from "./toolkits/theme/tools.ts";
 import * as ThemeHandlers from "./toolkits/theme/handlers.ts";
+import { GeasMcpHandlers, GeasToolkit } from "../annex/geas/mcp/registration.ts";
 import { ProjectToolkit } from "./toolkits/project/tools.ts";
 import * as ProjectHandlers from "./toolkits/project/handlers.ts";
 import { AttachmentToolkit } from "./toolkits/attachment/tools.ts";
@@ -1635,6 +1636,7 @@ export const layerMilestoneEvents = Layer.effectDiscard(
   Layer.provide(layerWebhookTransport),
 );
 
+const layerGeas = toolkitRegistration(GeasToolkit, GeasMcpHandlers);
 export const layer = layerMcpTransport(
-  Layer.mergeAll(layerTools, layerToolSearch, layerMilestoneEvents),
+  Layer.mergeAll(layerTools, layerToolSearch, layerMilestoneEvents, layerGeas),
 );
