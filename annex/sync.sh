@@ -53,6 +53,12 @@ while read -r commit; do
   sed -i '' 1d .git/annex-sync-queue
   [ "$subject" = "$REBRAND_SUBJECT" ] && continue
   if ! git cherry-pick --allow-empty "$commit" >/dev/null; then
+    # The route tree is generated, so a conflict there alone is settled by generating it again.
+    if [ "$(git diff --name-only --diff-filter=U)" = "apps/web/src/routeTree.gen.ts" ] &&
+      node annex/routes.mjs && git add apps/web/src/routeTree.gen.ts &&
+      GIT_EDITOR=true git cherry-pick --continue >/dev/null; then
+      continue
+    fi
     echo "CONFLICT replaying $commit: $subject" >&2
     git diff --name-only --diff-filter=U >&2
     exit 2
