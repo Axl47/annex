@@ -45,6 +45,7 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
+import { ANNEX_RPCS } from "./annex/rpc.ts";
 import { IsoDateTime, NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { SecretSourceCheckResult } from "./settingsSecretValue.ts";
 import { SecretReference } from "./secretReference.ts";
@@ -2474,6 +2475,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsIssueTrackersConnectRpc,
   WsIssueTrackersBindProjectRpc,
   WsGuestShareCreateRpc,
+  ...ANNEX_RPCS,
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
