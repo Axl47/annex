@@ -466,6 +466,17 @@ const make = Effect.gen(function* () {
     } satisfies GeasDetail;
   });
 
+  const isRunActive = (row: GeasRow) => row.run_state !== "idle";
+
+  const settleGeasThread = (geasId: string, threadId: ThreadId) =>
+    Effect.flatMap(now, (at) =>
+      threads.settleThread({
+        threadId,
+        commandId: CommandId.make(`annex-geas-settle:${geasId}:${at}`),
+        byOwnAgent: false,
+      }),
+    ).pipe(Effect.catchCause((cause) => Effect.logWarning("geas thread settle failed", { cause })));
+
   const setStatus = Effect.fn("GeasService.setStatus")(function* (
     row: GeasRow,
     status: GeasStatus,
@@ -487,13 +498,9 @@ const make = Effect.gen(function* () {
     if (row.thread_id === null) return;
     const threadId = ThreadId.make(row.thread_id);
     // Done threads settle like any finished thread; reopening brings them back.
+    // A running thread can't settle, so endRun settles it when the run ends.
     if (status === "done" || status === "canceled") {
-      const commandId = CommandId.make(`annex-geas-settle:${row.geas_id}:${updatedAt}`);
-      yield* threads
-        .settleThread({ threadId, commandId, byOwnAgent: false })
-        .pipe(
-          Effect.catchCause((cause) => Effect.logWarning("geas thread settle failed", { cause })),
-        );
+      if (!isRunActive(row)) yield* settleGeasThread(row.geas_id, threadId);
     } else if (row.status === "done" || row.status === "canceled") {
       yield* threads
         .dispatch({
@@ -645,8 +652,6 @@ const make = Effect.gen(function* () {
     if (current.status !== "in_progress") yield* setStatus(current, "in_progress", "server");
     yield* refresh(row.geas_id);
   });
-
-  const isRunActive = (row: GeasRow) => row.run_state !== "idle";
 
   /** Your comment steers an active run, or starts the next one. */
   const postUserComment = Effect.fn("GeasService.postUserComment")(function* (
@@ -1183,17 +1188,30 @@ const make = Effect.gen(function* () {
         runId: run.run_id,
       });
     }
+    if (current.status === "done" || current.status === "canceled") {
+      yield* settleGeasThread(row.geas_id, ThreadId.make(row.thread_id!));
+    }
     yield* refresh(row.geas_id);
   });
 
   const onPullRequestChange = Effect.fn("GeasService.onPullRequestChange")(function* (
     row: GeasRow,
   ) {
-    if (row.status !== "in_review" || row.thread_id === null) return;
+    if (row.status !== "in_review" && row.status !== "in_progress") return;
+    if (row.thread_id === null) return;
     const shell = yield* threads
       .getThreadShell(ThreadId.make(row.thread_id))
       .pipe(Effect.orElseSucceed(() => null));
-    const merged = (shell?.pullRequests ?? []).some((link) => link.snapshot?.state === "merged");
+    // Only a merge since the latest run counts, so a reopened geas ignores its old PR.
+    const since = (yield* selectRuns(row.geas_id)).at(-1)?.started_at ?? row.created_at;
+    const merged = (shell?.pullRequests ?? []).some((link) => {
+      const snapshot = link.snapshot;
+      if (snapshot?.state !== "merged") return false;
+      const mergedAt = snapshot.mergedAt ?? null;
+      return mergedAt === null
+        ? row.status === "in_review"
+        : Date.parse(mergedAt) >= Date.parse(since);
+    });
     if (!merged) return;
     yield* setStatus(row, "done", "server");
     yield* refresh(row.geas_id);
