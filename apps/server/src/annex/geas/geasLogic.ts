@@ -37,11 +37,34 @@ export interface ExecutedCommand {
   readonly completedAt: string;
 }
 
-const matchesCommand = (executed: string, declared: string) => executed.includes(declared.trim());
+const REDIRECTS = /\d*>&\d+/g;
+// `&&` keeps a failing exit code; a pipe, `||`, `;` or `&` can replace it with another's.
+const masksExitCode = (command: string) =>
+  /[|;&]/.test(command.replace(REDIRECTS, "").replaceAll("&&", ""));
+// A command starts at the beginning, after `&&`, `;` or `(`, or inside a `sh -c '…'` wrapper.
+const COMMAND_START = /(?:^|&&|;|\(|\s-l?c\s+['"]?)\s*$/;
+
+/** The executed command ran the declared one as a command whose exit code is its own. */
+function ranAsCommand(executed: string, declared: string): boolean {
+  for (let at = executed.indexOf(declared); at !== -1; at = executed.indexOf(declared, at + 1)) {
+    const after = executed.slice(at + declared.length);
+    if (COMMAND_START.test(executed.slice(0, at)) && /^(?:\s|['"]|$)/.test(after)) {
+      if (!masksExitCode(after)) return true;
+    }
+  }
+  return false;
+}
+
+const startsWithCommand = (declared: string, listed: string) =>
+  declared
+    .replace(REDIRECTS, "")
+    .split("&&")
+    .map((segment) => segment.trim())
+    .some((segment) => segment === listed || segment.startsWith(`${listed} `));
 
 /**
- * The newest command containing the declared one decides its status. When the project lists its
- * check commands, only those are vouched for; anything else stays unverified.
+ * The newest command that ran the declared one decides its status. When the project lists its
+ * check commands, only declared commands built on one of them are vouched for.
  */
 export function verifyChecks(
   declared: ReadonlyArray<GeasCheckDeclaration>,
@@ -49,11 +72,14 @@ export function verifyChecks(
   projectChecks: ReadonlyArray<GeasCheckDeclaration>,
 ): ReadonlyArray<GeasCheck> {
   return declared.map((check) => {
+    const command = check.command.trim();
     const vouchable =
-      projectChecks.length === 0 ||
-      projectChecks.some((listed) => matchesCommand(check.command, listed.command));
+      command !== "" &&
+      !masksExitCode(command) &&
+      (projectChecks.length === 0 ||
+        projectChecks.some((listed) => startsWithCommand(command, listed.command.trim())));
     const executed = vouchable
-      ? newestFirst.find((command) => matchesCommand(command.command, check.command))
+      ? newestFirst.find((candidate) => ranAsCommand(candidate.command, command))
       : undefined;
     if (executed === undefined || executed.exitCode === null) {
       return { ...check, status: "unverified", exitCode: null, verifiedAt: null };
@@ -98,7 +124,7 @@ export function needsYou(input: {
 const GEAS_RULES = [
   "The report is the deliverable. Anything needed to judge the work goes in the report, never only in a comment.",
   "Lead with the result in one line, then the proof. A visible change shows before and after at the same size, as a compare block of screenshots stored with geas_attach_media; anything else shows the output or number that proves it.",
-  "Declare each check with the exact command you ran. The server records its status from that command's real exit code.",
+  "Declare each check with the exact command you ran. The server records its status from that command's real exit code, so run it without pipes, `;` or `|| true` after it.",
   "Risks and gaps go in risks, never only in details. Never report unfinished work as done.",
   `Comments are chat: at most ${GEAS_COMMENT_MAX_LENGTH} characters, the outcome in one line, then the question or action. Never point at the report.`,
   "To finish: complete the report, post one comment with notify or suggested actions, then set the status to in_review. Waiting on someone: set todo. After delivering what the user approved, set done.",
