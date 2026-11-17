@@ -15,6 +15,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ann
 - `t3 update` and remote server updates install Annex's server builds.
 - The Android app installs alongside the official T3 Code app and updates from Annex's signed APKs.
 - On Windows, Annex installs in its own folder, next to T3 Code.
+- Geasa: hand an agent a piece of work from the Grimoire (sidebar, or "Open Grimoire" in the command palette) and review the report it hands back instead of the conversation. A report holds the result, risks, proof such as before-and-after screenshots or clips, and checks the server verifies from the commands the agent actually ran. Comments steer a running agent, and each project sets its own key prefix, checks, delivery buttons, and rules. Web and desktop for now.
 
 ### Changed
 
