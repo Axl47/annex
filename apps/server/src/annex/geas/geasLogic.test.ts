@@ -89,6 +89,7 @@ describe("verifyChecks", () => {
       ["scripts/check.sh", "scripts/check.sh 2>&1 | tail -20", "unverified"],
       ["scripts/check.sh", "scripts/check.sh; echo done", "unverified"],
       ["scripts/check.sh", "echo scripts/check.sh", "unverified"],
+      ["scripts/check.sh", 'grep -c "scripts/check.sh" README.md', "unverified"],
       ["scripts/check.sh || true", "scripts/check.sh || true", "unverified"],
     ];
     for (const [declaredCommand, executed, status] of cases) {
