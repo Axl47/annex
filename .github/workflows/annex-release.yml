@@ -77,6 +77,8 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      # Caches Gradle's dependencies and build cache between releases.
+      - uses: gradle/actions/setup-gradle@v4
       - name: Build release APK
         working-directory: apps/mobile
         env:
@@ -84,7 +86,9 @@ jobs:
           EXPO_NO_GIT_STATUS: "1"
         run: |
           pnpm exec expo prebuild --clean --platform android
-          cd android && ./gradlew assembleRelease --no-daemon -q
+          # Phones need only 64-bit ARM; the default also compiles native code for 32-bit ARM and
+          # both x86 emulator ABIs, quadrupling the native build and the APK size.
+          cd android && ./gradlew assembleRelease --no-daemon --build-cache -PreactNativeArchitectures=arm64-v8a
       # Expo's release build is signed with the debug key; re-sign with Annex's key so every APK
       # can update the one before it.
       - name: Sign APK
