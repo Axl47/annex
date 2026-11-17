@@ -27,6 +27,7 @@ a run failed, or a run ended without handing back a report.
   Only the latest unanswered ask has live buttons.
 - When a geas is in review, the delivery buttons send their prompt to the agent. **Land it** sends
   "Land this.", which runs your land skill if you have one.
+- Archiving a geas hides it from the Grimoire; the archive button there shows archived geasa again.
 - Moving a geas to **Done** or **Canceled** settles its thread; moving it back unsettles it. A geas
   in review moves to Done on its own when its pull request merges.
 
