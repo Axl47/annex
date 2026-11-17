@@ -36,6 +36,8 @@ import { grimoireAtoms, groupGrimoire, useGrimoireEnvironmentId } from "./state"
 
 export interface GrimoireSearch {
   readonly environmentId?: EnvironmentId;
+  /** Opens the enact dialog, for the command palette. */
+  readonly enact?: true;
 }
 
 export function GrimoirePage({ search }: { readonly search: GrimoireSearch }) {
@@ -55,13 +57,30 @@ export function GrimoirePage({ search }: { readonly search: GrimoireSearch }) {
       </SidebarInset>
     );
   }
-  return <Grimoire environmentId={environmentId} />;
+  return <Grimoire environmentId={environmentId} search={search} />;
 }
 
-function Grimoire({ environmentId }: { readonly environmentId: EnvironmentId }) {
+function Grimoire({
+  environmentId,
+  search,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly search: GrimoireSearch;
+}) {
   const navigate = useNavigate();
   const { environments } = useEnvironments();
-  const [enacting, setEnacting] = useState(false);
+  const [enactClicked, setEnactClicked] = useState(false);
+  const enacting = enactClicked || search.enact === true;
+  const setEnacting = (open: boolean) => {
+    setEnactClicked(open);
+    if (!open && search.enact === true) {
+      void navigate({
+        to: "/grimoire",
+        search: search.environmentId === undefined ? {} : { environmentId: search.environmentId },
+        replace: true,
+      });
+    }
+  };
   const [configuring, setConfiguring] = useState(false);
   const query = useEnvironmentQuery(grimoireAtoms.grimoire({ environmentId, input: {} }));
   const canEnact = useAtomValue(grimoireAtoms.enact.permissionAtom(environmentId));
@@ -177,8 +196,10 @@ function Grimoire({ environmentId }: { readonly environmentId: EnvironmentId }) 
         <EnactDialog
           environmentId={environmentId}
           onClose={(geasId) => {
-            setEnacting(false);
-            if (geasId !== undefined) {
+            if (geasId === undefined) {
+              setEnacting(false);
+            } else {
+              setEnactClicked(false);
               void navigate({
                 to: "/grimoire/$environmentId/$geasId",
                 params: { environmentId, geasId },
