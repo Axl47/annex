@@ -26,6 +26,7 @@ function makeHarness() {
   const launches: Array<ThreadLaunchService.ThreadLaunchInput> = [];
   const sends: Array<ThreadManagementService.ThreadManagementSendInput> = [];
   const dispatched: Array<string> = [];
+  const shell: { current: unknown } = { current: null };
   let sent = 0;
   const layer = GeasService.layer.pipe(
     Layer.provide(
@@ -57,7 +58,7 @@ function makeHarness() {
               return { sequence: 0 } as never;
             }),
           settleThread: () => Effect.sync(() => dispatched.push("settle") as never),
-          getThreadShell: () => Effect.succeed(null),
+          getThreadShell: () => Effect.sync(() => shell.current as never),
           streamDomainEvents: Stream.never,
         }),
         Layer.mock(ProjectService.ProjectService)({
@@ -70,7 +71,7 @@ function makeHarness() {
     ),
     Layer.provideMerge(NodeServices.layer),
   );
-  return { layer, launches, sends, dispatched };
+  return { layer, launches, sends, dispatched, shell };
 }
 
 const runEnded = (threadId: ThreadId, runId: string, status = "completed") =>
@@ -175,6 +176,27 @@ describe("GeasService", () => {
 
       yield* geas.setStatusAsAgent({ threadId, status: "in_review" });
       assert.strictEqual((yield* detailOf(geas, geasId)).status, "in_review");
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("moves to Done on a PR merged during the run, and settles when the run ends", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const geas = yield* GeasService.GeasService;
+      const { geasId } = yield* enact(geas);
+      const threadId = ThreadId.make(harness.launches[0]!.threadId!);
+      harness.shell.current = {
+        pullRequests: [{ snapshot: { state: "merged", mergedAt: "2026-11-17T12:00:00.000Z" } }],
+      };
+      yield* geas.handleEvent({
+        type: "thread.pull-request-synced",
+        threadId,
+      } as unknown as OrchestrationV2DomainEvent);
+      assert.strictEqual((yield* detailOf(geas, geasId)).status, "done");
+      assert.notInclude(harness.dispatched, "settle");
+
+      yield* geas.handleEvent(runEnded(threadId, "run-1"));
+      assert.include(harness.dispatched, "settle");
     }).pipe(Effect.provide(harness.layer));
   });
 });
