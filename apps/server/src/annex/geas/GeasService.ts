@@ -678,12 +678,23 @@ const make = Effect.gen(function* () {
           messageId: MessageId.make(`annex-geas-steer-message:${id}`),
           text: `New on ${row.geas_key}: ${body}`,
           attachments: [],
-          // Steers where the provider can; otherwise it waits for the run to end.
-          mode: "auto",
+          mode: "steer",
           createdBy: "user",
           creationSource: "web",
         })
         .pipe(
+          // Nothing to steer (e.g. waiting on an approval): the next fresh run carries it.
+          Effect.catchTags({
+            ThreadManagementNoSteerableRunError: () =>
+              insertActivity({
+                geasId,
+                kind: "event",
+                eventType: "comment_queued",
+                author: "server",
+                body: "The agent can't take your comment mid-run, so the next run starts with it.",
+                runId: run?.run_id ?? null,
+              }),
+          }),
           Effect.mapError(failWith("Could not pass the comment to the running agent.", geasId)),
         );
       yield* refresh(geasId);
@@ -1190,8 +1201,22 @@ const make = Effect.gen(function* () {
     }
     if (current.status === "done" || current.status === "canceled") {
       yield* settleGeasThread(row.geas_id, ThreadId.make(row.thread_id!));
+      return yield* refresh(row.geas_id);
     }
     yield* refresh(row.geas_id);
+    const queued = yield* orDie(sql<{ n: number }>`
+      SELECT COUNT(*) AS n FROM annex_geas_activity
+      WHERE geas_id = ${row.geas_id} AND run_id = ${run.run_id} AND event_type = 'comment_queued'
+    `);
+    if (queued[0]!.n > 0) {
+      yield* startRun({
+        geasId: GeasId.make(row.geas_id),
+        startedBy: "user",
+        creationSource: "web",
+      }).pipe(
+        Effect.catch((error) => Effect.logWarning("geas queued-comment run failed", { error })),
+      );
+    }
   });
 
   const onPullRequestChange = Effect.fn("GeasService.onPullRequestChange")(function* (
