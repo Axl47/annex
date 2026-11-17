@@ -7,7 +7,7 @@ conversation. Geasa live in the **Grimoire**, which you open from the book icon 
 
 ## Enact a geas
 
-1. In the Grimoire, choose **Enact**.
+1. In the Grimoire, choose **Enact**, or choose **Enact a geas** in the command palette.
 2. Describe the work and what done looks like. Pick the project, a workspace (a new worktree or the
    project checkout), and a model.
 3. Choose **Enact** to start now, or **Add to backlog** to start it later.
