@@ -1,5 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
+  DEFAULT_PROVIDER_INTERACTION_MODE,
+  DEFAULT_RUNTIME_MODE,
   FAMILIAR_DEFAULT_DAILY_RUN_BUDGET,
   type EnvironmentId,
   type FamiliarAutonomy,
@@ -7,12 +9,14 @@ import {
   type FamiliarsSnapshot,
   type ModelSelection,
   type ProviderInstanceId,
+  type ThreadId,
 } from "@t3tools/contracts";
 import { useState } from "react";
 
 import { ProviderModelPicker } from "../components/chat/ProviderModelPicker";
 import { scheduledTaskDefaultModel } from "../components/settings/scheduledTasksSettings.logic";
 import { Button } from "../components/ui/button";
+import { Checkbox } from "../components/ui/checkbox";
 import {
   Dialog,
   DialogDescription,
@@ -38,6 +42,7 @@ import { providerInstanceEntriesFor } from "../providerInstances";
 import { useProjects } from "../state/entities";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../state/server";
 import { useAtomCommand } from "../state/use-atom-command";
+import { routineUpsertInput, useServerTimeZoneLabel, type RoutineDraft } from "./RoutineDialog";
 import { familiarAtoms } from "./state";
 
 const ROLE_TEMPLATES = [
@@ -45,11 +50,23 @@ const ROLE_TEMPLATES = [
     id: "sync",
     name: "Sync",
     role: "Keep this fork in step with its upstream. When a routine or the user asks, check upstream for new commits, lay a geas to bring them in, and explain any conflict in plain words. Never push to the upstream remote.",
+    routine: {
+      title: "Nightly sync",
+      timeOfDay: "08:00",
+      prompt:
+        "Check upstream for new commits. If there are any, lay a geas to bring them in and report what changed once it's done; if not, say so in one line.",
+    },
   },
   {
     id: "scout",
     name: "Scout",
     role: "Watch the upstream project for changes worth knowing about: releases, fixes, and features that touch what this project changed. Summarize what matters, and lay a geas for follow-up only when the user agrees.",
+    routine: {
+      title: "Daily upstream digest",
+      timeOfDay: "09:00",
+      prompt:
+        "Check the upstream project for releases and notable changes since your last digest. Summarize what matters for this project in a few bullets, and note the newest one you covered in the Tome.",
+    },
   },
   {
     id: "reviewer",
@@ -61,7 +78,12 @@ const ROLE_TEMPLATES = [
     name: "Lead",
     role: "Turn the user's goals into geasa. Break work into pieces a fresh agent can do alone, lay them, follow their progress, and keep the user posted on what needs them.",
   },
-] as const;
+] as const satisfies ReadonlyArray<{
+  readonly id: string;
+  readonly name: string;
+  readonly role: string;
+  readonly routine?: RoutineDraft;
+}>;
 
 type TemplateId = (typeof ROLE_TEMPLATES)[number]["id"] | "blank";
 
@@ -77,7 +99,8 @@ export function SummonDialog({
 }: {
   readonly environmentId: EnvironmentId;
   readonly claudeInstance: FamiliarsSnapshot["claudeInstance"];
-  readonly onClose: (familiarId?: FamiliarId) => void;
+  /** With the new Familiar and its channel after a summon, empty on cancel. */
+  readonly onClose: (summoned?: { familiarId: FamiliarId; threadId?: ThreadId }) => void;
 }) {
   const projects = useProjects()
     .filter(
@@ -91,6 +114,10 @@ export function SummonDialog({
   const providers =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
   const summon = useAtomCommand(familiarAtoms.summon, { label: "summon Familiar" });
+  const upsertRoutine = useAtomCommand(serverEnvironment.upsertScheduledTask, {
+    label: "add routine",
+  });
+  const zone = useServerTimeZoneLabel(environmentId);
 
   const [template, setTemplate] = useState<TemplateId>("blank");
   const [name, setName] = useState("");
@@ -99,7 +126,13 @@ export function SummonDialog({
   const [autonomy, setAutonomy] = useState<FamiliarAutonomy>("start");
   const [budget, setBudget] = useState(String(FAMILIAR_DEFAULT_DAILY_RUN_BUDGET));
   const [chosenModel, setChosenModel] = useState<ModelSelection | null>(null);
+  const [firstMessage, setFirstMessage] = useState("");
+  const [addRoutine, setAddRoutine] = useState(true);
+  const [routineTime, setRoutineTime] = useState("");
   const [saving, setSaving] = useState(false);
+  const suggested = ROLE_TEMPLATES.find((candidate) => candidate.id === template);
+  const suggestedRoutine =
+    suggested !== undefined && "routine" in suggested ? suggested.routine : null;
 
   const project = projects.find((candidate) => candidate.id === projectId) ?? projects[0] ?? null;
   const instanceEntries = providerInstanceEntriesFor(providers, settings, project?.id ?? null);
@@ -136,6 +169,7 @@ export function SummonDialog({
     const chosen = ROLE_TEMPLATES.find((candidate) => candidate.id === id);
     if (chosen === undefined) return;
     setRole(chosen.role);
+    setRoutineTime("");
     if (name.trim() === "" || ROLE_TEMPLATES.some((candidate) => candidate.name === name.trim())) {
       setName(chosen.name);
     }
@@ -153,10 +187,31 @@ export function SummonDialog({
         modelSelection,
         autonomy,
         dailyRunBudget,
+        ...(firstMessage.trim() === "" ? {} : { firstMessage: firstMessage.trim() }),
       },
     });
+    if (result._tag !== "Success") {
+      setSaving(false);
+      return;
+    }
+    const { familiarId, threadId } = result.value;
+    if (suggestedRoutine !== null && addRoutine && threadId !== undefined) {
+      await upsertRoutine({
+        environmentId,
+        input: routineUpsertInput(
+          {
+            projectId: project.id,
+            modelSelection,
+            runtimeMode: DEFAULT_RUNTIME_MODE,
+            interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          },
+          threadId,
+          { ...suggestedRoutine, timeOfDay: routineTime || suggestedRoutine.timeOfDay },
+        ),
+      });
+    }
     setSaving(false);
-    if (result._tag === "Success") onClose(result.value.familiarId);
+    onClose({ familiarId, ...(threadId === undefined ? {} : { threadId }) });
   };
 
   return (
@@ -228,6 +283,42 @@ export function SummonDialog({
                   onChange={(event) => setRole(event.target.value)}
                 />
               </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="familiar-first-message">First message</Label>
+                <Textarea
+                  id="familiar-first-message"
+                  className="max-h-36 min-h-16 overflow-y-auto"
+                  placeholder="Optional. Sent to its channel right away, such as what to look at first."
+                  value={firstMessage}
+                  onChange={(event) => setFirstMessage(event.target.value)}
+                />
+              </div>
+              {suggestedRoutine !== null ? (
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <Label>
+                      <Checkbox
+                        checked={addRoutine}
+                        onCheckedChange={(checked) => setAddRoutine(checked === true)}
+                      />
+                      Add the routine "{suggestedRoutine.title}" every day at
+                    </Label>
+                    <Input
+                      type="time"
+                      aria-label="Routine time"
+                      nativeInput
+                      className="w-32"
+                      disabled={!addRoutine}
+                      value={routineTime || suggestedRoutine.timeOfDay}
+                      onChange={(event) => setRoutineTime(event.target.value)}
+                    />
+                    {zone !== undefined ? (
+                      <span className="text-muted-foreground">{zone}</span>
+                    ) : null}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{suggestedRoutine.prompt}</p>
+                </div>
+              ) : null}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="familiar-project">Project</Label>
