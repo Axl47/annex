@@ -31,9 +31,9 @@
       "types": "./src/workspaceBasenameLookup.ts",
       "default": "./src/workspaceBasenameLookup.ts"
     },
-    "./annex/grimoire": {
-      "types": "./src/annex/grimoire.ts",
-      "default": "./src/annex/grimoire.ts"
+    "./annex/*": {
+      "types": "./src/annex/*.ts",
+      "default": "./src/annex/*.ts"
     },
     "./saved-views": {
       "types": "./src/savedViews.ts",
