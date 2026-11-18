@@ -95,6 +95,36 @@ const migrations: Record<string, Effect.Effect<void, unknown, SqlClient.SqlClien
       ON annex_geas_commands(geas_id, completed_at)
     `;
   }),
+  "2_Familiars": Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`
+      CREATE TABLE IF NOT EXISTS annex_familiars (
+        familiar_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        role_prompt TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        thread_id TEXT,
+        model_selection_json TEXT NOT NULL,
+        runtime_mode TEXT NOT NULL,
+        interaction_mode TEXT NOT NULL,
+        autonomy TEXT NOT NULL,
+        tome TEXT NOT NULL DEFAULT '',
+        tome_revision INTEGER NOT NULL DEFAULT 0,
+        daily_run_budget INTEGER NOT NULL,
+        runs_today INTEGER NOT NULL DEFAULT 0,
+        runs_day TEXT NOT NULL DEFAULT '',
+        paused_at TEXT,
+        archived_at TEXT,
+        held_task_ids_json TEXT NOT NULL DEFAULT '[]',
+        held_wakes_json TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `;
+    yield* sql`CREATE INDEX IF NOT EXISTS idx_annex_familiars_thread ON annex_familiars(thread_id)`;
+    // Which thread laid a geas, so a Familiar's geasa can wake its channel.
+    yield* sql`ALTER TABLE annex_geas ADD COLUMN enacted_by_thread_id TEXT`;
+  }),
 };
 
 export const runAnnexMigrations = run({

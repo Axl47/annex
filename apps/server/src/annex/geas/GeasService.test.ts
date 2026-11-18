@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   ProjectId,
   ProviderInstanceId,
+  GEAS_AGENT_RUN_LIMIT,
   ThreadId,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadProjection,
@@ -19,6 +20,7 @@ import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as TextGeneration from "../../textGeneration/TextGeneration.ts";
+import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
 import * as GeasService from "./GeasService.ts";
 
 const projectId = ProjectId.make("project-annex");
@@ -83,6 +85,7 @@ function makeHarness() {
               ? Effect.never
               : Effect.succeed({ title: generatedTitle.current }),
         }),
+        Layer.mock(GitVcsDriver.GitVcsDriver)({}),
         ServerSettings.layerTest({}),
         Layer.fresh(SqlitePersistence.layerMemory),
         ServerConfig.layerTest(process.cwd(), { prefix: "annex-geas-test-" }),
@@ -198,6 +201,77 @@ describe("GeasService", () => {
       assert.strictEqual(send?.freshContext, true);
       assert.include(send?.text, "- User: Also check mobile.");
       assert.strictEqual((yield* detailOf(geas, geasId)).runs.length, 2);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("never lets a Familiar's comments reset the loop guard", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const geas = yield* GeasService.GeasService;
+      const { geasId } = yield* geas.enact(
+        { projectId, request: "Sync upstream.", workspace: { type: "root" }, modelSelection },
+        { actor: "agent", creationSource: "mcp", threadId: ThreadId.make("channel-1") },
+      );
+      const threadId = harness.launches[0]!.threadId!;
+      yield* geas.handleEvent(runEnded(threadId, "run-1"));
+      const comment = (body: string) =>
+        geas.commentAsFamiliar({
+          key: "ANX-1",
+          familiarName: "Sync",
+          body,
+          queue: false,
+          mayStartRun: true,
+        });
+      // The enact run counts once; each comment on the idle geas starts another agent run.
+      for (let run = 1; run < GEAS_AGENT_RUN_LIMIT; run++) {
+        yield* comment(`Try again (${run}).`);
+        yield* geas.handleEvent(runEnded(threadId, `run-sent-${run}`));
+      }
+      const before = (yield* detailOf(geas, geasId)).activity.length;
+      const refused = yield* comment("Once more.").pipe(Effect.flip);
+      assert.include(refused.message, "waiting for the user");
+      assert.strictEqual((yield* detailOf(geas, geasId)).activity.length, before);
+
+      yield* geas.comment({ geasId, body: "Go ahead." });
+      yield* geas.handleEvent(runEnded(threadId, `run-sent-${GEAS_AGENT_RUN_LIMIT}`));
+      yield* comment("Once more.");
+      const detail = yield* detailOf(geas, geasId);
+      assert.isTrue(detail.activity.some((entry) => entry.body === "✦ Sync: Once more."));
+      assert.strictEqual(detail.runs.at(-1)?.startedBy, "agent");
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("wakes the laying thread once its run ends, with what happened meanwhile", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const geas = yield* GeasService.GeasService;
+      const wakes: Array<GeasService.GeasWake> = [];
+      yield* geas.streamWakes.pipe(
+        Stream.runForEach((wake) => Effect.sync(() => wakes.push(wake))),
+        Effect.forkScoped,
+      );
+      yield* Effect.yieldNow;
+      yield* geas.enact(
+        { projectId, request: "Sync upstream.", workspace: { type: "root" }, modelSelection },
+        { actor: "agent", creationSource: "mcp", threadId: ThreadId.make("channel-1") },
+      );
+      yield* enact(geas);
+      const threadId = ThreadId.make(harness.launches[0]!.threadId!);
+      yield* geas.commentAsAgent({ threadId, body: "Which remote?", notify: true, actions: [] });
+      yield* geas.handleEvent(runEnded(threadId, "run-1", "failed"));
+      yield* geas.handleEvent(runEnded(ThreadId.make(harness.launches[1]!.threadId!), "run-1"));
+      assert.deepStrictEqual(
+        wakes.map(({ key, event, idle, enactedByThreadId }) => ({
+          key,
+          event,
+          idle,
+          enactedByThreadId: String(enactedByThreadId),
+        })),
+        [
+          { key: "ANX-1", event: "asked", idle: false, enactedByThreadId: "channel-1" },
+          { key: "ANX-1", event: "run_failed", idle: true, enactedByThreadId: "channel-1" },
+        ],
+      );
     }).pipe(Effect.provide(harness.layer));
   });
 
