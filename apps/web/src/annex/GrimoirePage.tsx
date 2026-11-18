@@ -264,7 +264,7 @@ function Grimoire({
   );
 }
 
-function GrimoireRowItem({
+export function GrimoireRowItem({
   environmentId,
   row,
   projectTitle,
