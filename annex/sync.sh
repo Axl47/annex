@@ -15,6 +15,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 REBRAND_SUBJECT="chore(annex): rebrand to Annex"
+# The git dir, not .git: in a worktree .git is a file.
+queue="$(git rev-parse --git-dir)/annex-sync-queue"
 resume=false push=true
 for arg in "$@"; do
   case "$arg" in
@@ -43,14 +45,15 @@ if ! $resume; then
     echo "upstream has nothing new"; exit 3
   fi
   # Annex's own commits, oldest first, minus the generated rebrand commit.
-  git rev-list --reverse "$base..main" > .git/annex-sync-queue
+  git rev-list --reverse "$base..main" > "$queue"
   git checkout -q -B annex-sync upstream/main
 fi
 
 while read -r commit; do
   [ -n "$commit" ] || continue
   subject=$(git log -1 --format=%s "$commit")
-  sed -i '' 1d .git/annex-sync-queue
+  # Portable across BSD and GNU, unlike sed -i.
+  tail -n +2 "$queue" > "$queue.next" && mv "$queue.next" "$queue"
   [ "$subject" = "$REBRAND_SUBJECT" ] && continue
   if ! git cherry-pick --allow-empty "$commit" >/dev/null; then
     # The route tree is generated, so a conflict there alone is settled by generating it again.
@@ -64,8 +67,8 @@ while read -r commit; do
     git diff --name-only --diff-filter=U >&2
     exit 2
   fi
-done < <(cat .git/annex-sync-queue)
-rm -f .git/annex-sync-queue
+done < <(cat "$queue")
+rm -f "$queue"
 
 ./annex/rebrand.sh >/dev/null
 git add -A apps assets scripts packages .github README.md AGENTS.md knip.jsonc
