@@ -1,79 +1,55 @@
+import {
+  ASSISTANT_CITATION_MAX_TEXT_LENGTH,
+  MessageId,
+  type AssistantCitation,
+  type EnvironmentId,
+  type ThreadId,
+} from "@t3tools/contracts";
 import { MessageSquareQuoteIcon, ScrollTextIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Button } from "../components/ui/button";
+import { captureAssistantTextSelection } from "../lib/assistantTextSelection";
 import {
   observeSelectionActions,
   resolveSelectionActionPosition,
   type SelectionActionPoint,
 } from "../lib/selectionActions";
 
-const QUOTE_MAX_LENGTH = 2000;
-const PASSAGE_MAX_LENGTH = 1200;
-const PASSAGE_BLOCKS = "p, li, td, th, figcaption, pre, blockquote, h3";
-
-/** Selected report text, with where it sits so an agent can find it. */
-export interface ReportSelection {
-  readonly text: string;
-  readonly section: string | null;
-  /** The whole block the selection sits in, when it is more than the selection. */
-  readonly passage: string | null;
+/** Where a report citation points: the geas's thread, with the report standing in for a message. */
+export interface ReportCitationSource {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly messageId: string;
 }
 
-const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text);
-const quote = (text: string) =>
-  text
-    .split("\n")
-    .map((line) => `> ${line}`)
-    .join("\n");
-
-export function quoteReportSelection(selection: ReportSelection): string {
-  const where = selection.section === null ? "the report" : `the report's ${selection.section}`;
-  const lines = [`From ${where}, I'm quoting:`, quote(clip(selection.text, QUOTE_MAX_LENGTH))];
-  if (selection.passage !== null) {
-    lines.push("In this passage:", quote(clip(selection.passage, PASSAGE_MAX_LENGTH)));
-  }
-  return lines.join("\n");
-}
-
-function readSelection(range: Range, text: string): ReportSelection {
-  const start =
-    range.startContainer instanceof Element
-      ? range.startContainer
-      : range.startContainer.parentElement;
-  const block = start?.closest(PASSAGE_BLOCKS) ?? null;
-  const passage =
-    block !== null && block.contains(range.endContainer)
-      ? (block.textContent ?? "").replace(/\s+/g, " ").trim()
-      : "";
-  return {
-    text,
-    section: start?.closest<HTMLElement>("[data-report-section]")?.dataset.reportSection ?? null,
-    passage: passage.length > text.replace(/\s+/g, " ").length ? passage : null,
-  };
-}
-
-/** Comment on, or enact a new geas from, text selected in a report. */
+/**
+ * Cites text selected in a report the way Cite does in chat, so the agent gets the same
+ * `<assistant_citations>` block. `source` carries `data-assistant-citation-source`.
+ */
 export function GeasSelectionMenu({
   source,
+  citationSource,
   canComment,
   canEnact,
   onComment,
   onEnact,
 }: {
   readonly source: HTMLElement | null;
+  readonly citationSource: ReportCitationSource;
   readonly canComment: boolean;
   readonly canEnact: boolean;
-  readonly onComment: (selection: ReportSelection) => void;
-  readonly onEnact: (selection: ReportSelection) => void;
+  readonly onComment: (citation: AssistantCitation) => void;
+  readonly onEnact: (citation: AssistantCitation) => void;
 }) {
   const [selection, setSelection] = useState<{
-    readonly report: ReportSelection;
+    readonly citation: AssistantCitation;
     readonly position: SelectionActionPoint;
   } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const actionsRef = useRef<ReturnType<typeof observeSelectionActions> | null>(null);
+  const { environmentId, threadId, messageId } = citationSource;
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the menu and clamps it inside the window before paint
   useLayoutEffect(() => {
@@ -92,17 +68,20 @@ export function GeasSelectionMenu({
       element: source,
       getActionElement: () => menuRef.current,
       onSelection: () => {
-        const native = window.getSelection();
-        if (!native || native.isCollapsed || native.rangeCount === 0) return clear();
-        const range = native.getRangeAt(0);
-        const text = native.toString().trim();
-        if (text === "" || !source.contains(range.commonAncestorContainer)) return clear();
-        const rects = range.getClientRects();
+        const captured = captureAssistantTextSelection(source, window.getSelection());
+        if (!captured) return clear();
+        const rects = captured.range.getClientRects();
         setSelection({
-          report: readSelection(range, text),
+          citation: {
+            version: 1,
+            environmentId,
+            threadId,
+            messageId: MessageId.make(messageId),
+            ...captured.selector,
+          },
           position: resolveSelectionActionPosition({
             bounds: source.getBoundingClientRect(),
-            selectionRect: rects.item(rects.length - 1) ?? range.getBoundingClientRect(),
+            selectionRect: rects.item(rects.length - 1) ?? captured.range.getBoundingClientRect(),
             pointer: null,
             viewport: { width: window.innerWidth, height: window.innerHeight },
           }),
@@ -123,11 +102,12 @@ export function GeasSelectionMenu({
       actions.dispose();
       actionsRef.current = null;
     };
-  }, [source]);
+  }, [environmentId, messageId, source, threadId]);
 
   if (!selection) return null;
-  const run = (action: (selection: ReportSelection) => void) => {
-    action(selection.report);
+  const tooLong = selection.citation.text.length > ASSISTANT_CITATION_MAX_TEXT_LENGTH;
+  const run = (action: (citation: AssistantCitation) => void) => {
+    action(selection.citation);
     actionsRef.current?.cancel();
     window.getSelection()?.removeAllRanges();
     setSelection(null);
@@ -147,26 +127,34 @@ export function GeasSelectionMenu({
         }
       }}
     >
-      <Button
-        type="button"
-        size="xs"
-        variant="glass"
-        disabled={!canComment}
-        onClick={() => run(onComment)}
-      >
-        <MessageSquareQuoteIcon aria-hidden="true" />
-        Comment inline
-      </Button>
-      <Button
-        type="button"
-        size="xs"
-        variant="glass"
-        disabled={!canEnact}
-        onClick={() => run(onEnact)}
-      >
-        <ScrollTextIcon aria-hidden="true" />
-        Enact new geas
-      </Button>
+      {tooLong ? (
+        <Button type="button" size="xs" variant="glass" disabled>
+          Shorten selection
+        </Button>
+      ) : (
+        <>
+          <Button
+            type="button"
+            size="xs"
+            variant="glass"
+            disabled={!canComment}
+            onClick={() => run(onComment)}
+          >
+            <MessageSquareQuoteIcon aria-hidden="true" />
+            Comment inline
+          </Button>
+          <Button
+            type="button"
+            size="xs"
+            variant="glass"
+            disabled={!canEnact}
+            onClick={() => run(onEnact)}
+          >
+            <ScrollTextIcon aria-hidden="true" />
+            Enact new geas
+          </Button>
+        </>
+      )}
     </div>,
     document.body,
   );

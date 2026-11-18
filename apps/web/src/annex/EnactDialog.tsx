@@ -1,14 +1,16 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
   ModelSelection,
+  type AssistantCitation,
   type EnvironmentId,
   type GeasId,
   type OrchestrationV2ThreadLaunchWorkspaceStrategy,
   type ProjectId,
   type ProviderInstanceId,
 } from "@t3tools/contracts";
+import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
 import * as Schema from "effect/Schema";
-import { FolderIcon, QuoteIcon, XIcon } from "lucide-react";
+import { FolderIcon } from "lucide-react";
 import { useState } from "react";
 
 import type { EnvMode } from "../components/BranchToolbar.logic";
@@ -37,6 +39,7 @@ import { useProjects } from "../state/entities";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../state/server";
 import { useAtomCommand } from "../state/use-atom-command";
 import { EnactBranchPicker } from "./EnactBranchPicker";
+import { GeasCitationChip } from "./geasCitations";
 import { grimoireAtoms } from "./state";
 
 /** What the last enact used, so the next one starts from it. */
@@ -54,8 +57,8 @@ const lastEnactKey = (environmentId: EnvironmentId) => `annex:geas-last-enact:${
 
 export interface EnactSeed {
   readonly projectId: ProjectId;
-  /** A quoted passage of the parent's report that the new geas is about. */
-  readonly quote: string;
+  /** The passage of the parent's report the new geas is about, cited as in chat. */
+  readonly citation: AssistantCitation;
   readonly parent: {
     readonly geasId: GeasId;
     readonly key: string;
@@ -99,7 +102,8 @@ export function EnactDialog({
     seed?.projectId ?? last.projectId ?? projects[0]?.id ?? "",
   );
   const [request, setRequest] = useState("");
-  const [quote, setQuote] = useState(seed?.quote ?? "");
+  const [citation, setCitation] = useState<AssistantCitation | null>(seed?.citation ?? null);
+  const cited = citation === null ? "" : serializeAssistantCitation(citation);
   const [envMode, setEnvMode] = useState<EnvMode>(last.envMode ?? "worktree");
   const [baseRefs, setBaseRefs] = useState<Readonly<Record<string, string>>>(last.baseRefs ?? {});
   const [startFromOrigin, setStartFromOrigin] = useState(last.startFromOrigin ?? false);
@@ -133,9 +137,9 @@ export function EnactDialog({
       input: {
         projectId: project.id,
         request:
-          seed === undefined || quote === ""
+          seed === undefined || cited === ""
             ? request.trim()
-            : `${request.trim()}\n\nThis comes from geas ${seed.parent.key} (${seed.parent.title}).\n${quote}`,
+            : `${request.trim()}\n\nThis comes from geas ${seed.parent.key} (${seed.parent.title}), citing its report:\n${cited}`,
         workspace,
         modelSelection,
         backlog,
@@ -160,7 +164,7 @@ export function EnactDialog({
       environmentId,
       input: {
         geasId: seed.parent.geasId,
-        body: [QUEUE_INSTRUCTIONS, `What I want:\n${request.trim()}`, quote]
+        body: [QUEUE_INSTRUCTIONS, `What I want:\n${request.trim()}`, cited]
           .filter((part) => part !== "")
           .join("\n\n"),
         queue: true,
@@ -195,21 +199,10 @@ export function EnactDialog({
             <ComposerSurface.Shell contextRow>
               <ComposerSurface.Host>
                 <ComposerSurface.Main>
-                  {seed !== undefined && quote !== "" ? (
-                    <div className="mx-3 mt-3 flex items-start gap-2 rounded-lg bg-muted/50 px-2.5 py-2 text-xs text-muted-foreground">
-                      <QuoteIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-                      <p className="line-clamp-4 min-w-0 flex-1 whitespace-pre-wrap">
-                        {seed.parent.key}: {quote}
-                      </p>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-xs"
-                        aria-label="Remove context"
-                        onClick={() => setQuote("")}
-                      >
-                        <XIcon />
-                      </Button>
+                  {seed !== undefined && citation !== null ? (
+                    <div className="mx-3 mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <span className="shrink-0">From {seed.parent.key}:</span>
+                      <GeasCitationChip citation={citation} onRemove={() => setCitation(null)} />
                     </div>
                   ) : null}
                   <textarea
