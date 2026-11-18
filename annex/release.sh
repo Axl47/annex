@@ -28,9 +28,18 @@ version=$(./annex/build.sh version)
 ./annex/build.sh mac "$version"
 
 upstream=$(git log -1 --format='%h %s' "$(git merge-base HEAD "$(git rev-parse --verify -q upstream/main || echo HEAD)")")
+notes="$(git rev-parse --git-common-dir)/annex-release-notes.md"
+echo "Annex on top of upstream \`$upstream\`." > "$notes"
+previous=$(gh release list --repo "$REPO" --exclude-drafts -L 1 --json tagName -q '.[0].tagName')
+if [ -n "$previous" ] && git fetch -q origin tag "$previous" &&
+  highlights=$(./annex/upstream-highlights.sh "$previous" HEAD); then
+  [ -z "$highlights" ] || printf '\n%s\n' "$highlights" >> "$notes"
+else
+  echo "warning: no upstream highlights since ${previous:-the first release}" >&2
+fi
 gh release create "v$version" --repo "$REPO" --draft --prerelease --target "$sha" \
   --title "Annex $version" \
-  --notes "Annex on top of upstream \`$upstream\`." \
+  --notes-file "$notes" \
   "release/Annex-$version-arm64.zip" release/nightly-mac.yml
 gh workflow run annex-release.yml --repo "$REPO" --ref main -f version="$version" -f ref="$sha"
 echo "drafted v$version; annex-release adds Windows, Linux CLI and Android, then publishes it"
