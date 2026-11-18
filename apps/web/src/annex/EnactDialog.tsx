@@ -1,72 +1,70 @@
 import { useAtomValue } from "@effect/atom-react";
-import type {
-  EnvironmentId,
-  GeasId,
+import {
   ModelSelection,
-  OrchestrationV2ThreadLaunchWorkspaceStrategy,
-  ProjectId,
-  ProviderInstanceId,
+  type EnvironmentId,
+  type GeasId,
+  type OrchestrationV2ThreadLaunchWorkspaceStrategy,
+  type ProjectId,
+  type ProviderInstanceId,
 } from "@t3tools/contracts";
-import { useState, type ReactNode } from "react";
+import * as Schema from "effect/Schema";
+import { FolderIcon, QuoteIcon, XIcon } from "lucide-react";
+import { useState } from "react";
 
+import type { EnvMode } from "../components/BranchToolbar.logic";
+import { BranchToolbarEnvModeSelector } from "../components/BranchToolbarEnvModeSelector";
+import { ComposerSelectControl } from "../components/chat/ComposerControl";
+import { ComposerSurface } from "../components/chat/ComposerSurface";
 import { ProviderModelPicker } from "../components/chat/ProviderModelPicker";
+import { ComposerContextLabel } from "../components/ComposerContextLabel";
 import { scheduledTaskDefaultModel } from "../components/settings/scheduledTasksSettings.logic";
-import { SETTINGS_PICKER_TRIGGER_CLASSNAME } from "../components/settings/settingsLayout";
-import { WorktreeBaseBranchPicker } from "../components/WorktreeBaseBranchPicker";
 import { Button } from "../components/ui/button";
 import {
   Dialog,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogPanel,
   DialogPopup,
   DialogTitle,
 } from "../components/ui/dialog";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
-import {
-  Select,
-  SelectItem,
-  SelectPopup,
-  SelectTrigger,
-  SelectValue,
-} from "../components/ui/select";
-import { Textarea } from "../components/ui/textarea";
+import { Select, SelectItem, SelectPopup, SelectValue } from "../components/ui/select";
+import { Separator } from "../components/ui/separator";
+import { readLocalStorageValue, writeLocalStorageValue } from "../hooks/useLocalStorage";
 import { useEnvironmentSettings } from "../hooks/useSettings";
 import { getCustomModelOptionsByInstance } from "../modelSelection";
 import { providerInstanceEntriesFor } from "../providerInstances";
 import { useProjects } from "../state/entities";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../state/server";
 import { useAtomCommand } from "../state/use-atom-command";
+import { EnactBranchPicker } from "./EnactBranchPicker";
 import { grimoireAtoms } from "./state";
 
-type WorkspaceMode = "worktree" | "root";
+/** What the last enact used, so the next one starts from it. */
+const LastEnact = Schema.Struct({
+  projectId: Schema.optional(Schema.String),
+  envMode: Schema.optional(Schema.Literals(["local", "worktree"])),
+  /** Branch names only mean something in their own project. */
+  baseRefs: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  startFromOrigin: Schema.optional(Schema.Boolean),
+  modelSelection: Schema.optional(ModelSelection),
+});
+type LastEnact = typeof LastEnact.Type;
 
-function Field({
-  label,
-  htmlFor,
-  children,
-}: {
-  readonly label: string;
-  readonly htmlFor?: string;
-  readonly children: ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={htmlFor}>{label}</Label>
-      {children}
-    </div>
-  );
+const lastEnactKey = (environmentId: EnvironmentId) => `annex:geas-last-enact:${environmentId}`;
+
+export interface EnactSeed {
+  readonly projectId: ProjectId;
+  /** Quoted context sent after the request, such as a passage from another geas's report. */
+  readonly context: string;
 }
 
 export function EnactDialog({
   environmentId,
-  initialProjectId,
+  seed,
   onClose,
 }: {
   readonly environmentId: EnvironmentId;
-  readonly initialProjectId?: ProjectId;
+  readonly seed?: EnactSeed;
   readonly onClose: (geasId?: GeasId) => void;
 }) {
   const projects = useProjects()
@@ -82,16 +80,24 @@ export function EnactDialog({
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
   const enact = useAtomCommand(grimoireAtoms.enact, { label: "enact geas" });
 
-  const [projectId, setProjectId] = useState<string>(initialProjectId ?? projects[0]?.id ?? "");
+  const [last] = useState<LastEnact>(() =>
+    readLocalStorageValue(lastEnactKey(environmentId), {}, LastEnact),
+  );
+  const [projectId, setProjectId] = useState<string>(
+    seed?.projectId ?? last.projectId ?? projects[0]?.id ?? "",
+  );
   const [request, setRequest] = useState("");
-  const [title, setTitle] = useState("");
-  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("worktree");
-  const [baseRef, setBaseRef] = useState("");
-  const [startFromOrigin, setStartFromOrigin] = useState(false);
-  const [chosenModel, setChosenModel] = useState<ModelSelection | null>(null);
+  const [context, setContext] = useState(seed?.context ?? "");
+  const [envMode, setEnvMode] = useState<EnvMode>(last.envMode ?? "worktree");
+  const [baseRefs, setBaseRefs] = useState<Readonly<Record<string, string>>>(last.baseRefs ?? {});
+  const [startFromOrigin, setStartFromOrigin] = useState(last.startFromOrigin ?? false);
+  const [chosenModel, setChosenModel] = useState<ModelSelection | null>(
+    last.modelSelection ?? null,
+  );
   const [saving, setSaving] = useState(false);
 
   const project = projects.find((candidate) => candidate.id === projectId) ?? projects[0] ?? null;
+  const baseRef = project === null ? "" : (baseRefs[project.id] ?? "");
   const instanceEntries = providerInstanceEntriesFor(providers, settings, project?.id ?? null);
   const modelSelection =
     chosenModel !== null &&
@@ -101,11 +107,12 @@ export function EnactDialog({
   const activeInstanceId =
     modelSelection?.instanceId ?? instanceEntries[0]?.instanceId ?? ("" as ProviderInstanceId);
   const activeModel = modelSelection?.model ?? "";
+  const ready = project !== null && modelSelection !== null && request.trim() !== "" && !saving;
 
   const submit = async (backlog: boolean) => {
-    if (project === null || modelSelection === null || request.trim() === "" || saving) return;
+    if (!ready || project === null || modelSelection === null) return;
     const workspace: OrchestrationV2ThreadLaunchWorkspaceStrategy =
-      workspaceMode === "root"
+      envMode === "local"
         ? { type: "root" }
         : { type: "worktree", baseRef: baseRef.trim() || "HEAD", startFromOrigin };
     setSaving(true);
@@ -113,18 +120,22 @@ export function EnactDialog({
       environmentId,
       input: {
         projectId: project.id,
-        request: request.trim(),
-        ...(title.trim() === "" ? {} : { title: title.trim() }),
+        request: context.trim() === "" ? request.trim() : `${request.trim()}\n\n${context.trim()}`,
         workspace,
         modelSelection,
         backlog,
       },
     });
     setSaving(false);
-    if (result._tag === "Success") onClose(result.value.geasId);
+    if (result._tag !== "Success") return;
+    writeLocalStorageValue(
+      lastEnactKey(environmentId),
+      { projectId: project.id, envMode, baseRefs, startFromOrigin, modelSelection },
+      {},
+      LastEnact,
+    );
+    onClose(result.value.geasId);
   };
-
-  const ready = project !== null && modelSelection !== null && request.trim() !== "" && !saving;
 
   return (
     <Dialog
@@ -133,140 +144,136 @@ export function EnactDialog({
         if (!open) onClose();
       }}
     >
-      <DialogPopup className="sm:max-w-xl">
-        <form
-          className="flex min-h-0 flex-col"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submit(false);
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle>Enact a geas</DialogTitle>
-            <DialogDescription>
-              An agent works on it in its own thread and hands back a report for you to review.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogPanel>
-            <div className="flex flex-col gap-4">
-              <Field label="What should be done?" htmlFor="geas-request">
-                <Textarea
-                  id="geas-request"
-                  autoFocus
-                  className="max-h-72 min-h-28 overflow-y-auto"
-                  placeholder="Describe the work, what done looks like, and anything the agent should know."
-                  value={request}
-                  onChange={(event) => setRequest(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                      event.preventDefault();
-                      void submit(false);
-                    }
-                  }}
-                />
-              </Field>
-              <Field label="Title" htmlFor="geas-title">
-                <Input
-                  id="geas-title"
-                  placeholder="Defaults to the first line"
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
-                />
-              </Field>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Project" htmlFor="geas-project">
-                  <Select
-                    value={project?.id ?? ""}
-                    onValueChange={(value) => setProjectId(value as string)}
-                  >
-                    <SelectTrigger size="sm" id="geas-project">
+      <DialogPopup className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Enact a geas</DialogTitle>
+          <DialogDescription>
+            An agent works on it in its own thread and hands back a report for you to review. The
+            geas is titled from what you write.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogPanel>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submit(false);
+            }}
+          >
+            <ComposerSurface.Shell contextRow>
+              <ComposerSurface.Host>
+                <ComposerSurface.Main>
+                  {context !== "" ? (
+                    <div className="mx-3 mt-3 flex items-start gap-2 rounded-lg bg-muted/50 px-2.5 py-2 text-xs text-muted-foreground">
+                      <QuoteIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                      <p className="line-clamp-4 min-w-0 flex-1 whitespace-pre-wrap">{context}</p>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label="Remove context"
+                        onClick={() => setContext("")}
+                      >
+                        <XIcon />
+                      </Button>
+                    </div>
+                  ) : null}
+                  <textarea
+                    aria-label="What should be done?"
+                    autoFocus
+                    className="block max-h-72 min-h-28 w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-base outline-none placeholder:text-muted-foreground/70 sm:text-sm"
+                    placeholder="Describe the work, what done looks like, and anything the agent should know."
+                    value={request}
+                    onChange={(event) => setRequest(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                        event.preventDefault();
+                        void submit(false);
+                      }
+                    }}
+                  />
+                  <div className="flex items-center gap-1 px-2.5 pb-2.5">
+                    <ProviderModelPicker
+                      environmentId={environmentId}
+                      disabled={saving}
+                      activeInstanceId={activeInstanceId}
+                      model={activeModel}
+                      lockedProvider={null}
+                      instanceEntries={instanceEntries}
+                      modelOptionsByInstance={getCustomModelOptionsByInstance(
+                        settings,
+                        providers,
+                        activeInstanceId,
+                        activeModel,
+                      )}
+                      isComposerOwned
+                      onInstanceModelChange={(instanceId, model) =>
+                        setChosenModel({ instanceId, model })
+                      }
+                    />
+                    <div className="min-w-0 flex-1" />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={!ready}
+                      onClick={() => void submit(true)}
+                    >
+                      Add to backlog
+                    </Button>
+                    <Button type="submit" size="sm" disabled={!ready}>
+                      Enact
+                    </Button>
+                  </div>
+                </ComposerSurface.Main>
+              </ComposerSurface.Host>
+              <ComposerSurface.ContextStrip className="gap-1 text-xs font-normal text-foreground/70 dark:text-muted-foreground">
+                <Select
+                  modal={false}
+                  value={project?.id ?? ""}
+                  onValueChange={(value) => setProjectId(value as string)}
+                >
+                  <ComposerSelectControl size="xs" className="min-w-0 shrink" aria-label="Project">
+                    <FolderIcon className="size-3" />
+                    <ComposerContextLabel>
                       <SelectValue>{project?.title ?? "Choose a project"}</SelectValue>
-                    </SelectTrigger>
-                    <SelectPopup>
-                      {projects.map((candidate) => (
-                        <SelectItem key={candidate.id} value={candidate.id}>
-                          {candidate.title}
-                        </SelectItem>
-                      ))}
-                    </SelectPopup>
-                  </Select>
-                </Field>
-                <Field label="Workspace" htmlFor="geas-workspace">
-                  <Select
-                    value={workspaceMode}
-                    onValueChange={(value) => setWorkspaceMode(value as WorkspaceMode)}
-                  >
-                    <SelectTrigger size="sm" id="geas-workspace">
-                      <SelectValue>
-                        {workspaceMode === "worktree"
-                          ? "Create a new worktree"
-                          : "Use the project checkout"}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectPopup>
-                      <SelectItem value="worktree">Create a new worktree</SelectItem>
-                      <SelectItem value="root">Use the project checkout</SelectItem>
-                    </SelectPopup>
-                  </Select>
-                </Field>
-              </div>
-              {workspaceMode === "worktree" ? (
-                <Field label="Base branch" htmlFor="geas-base-ref">
-                  <WorktreeBaseBranchPicker
-                    key={`${environmentId}:${project?.id ?? ""}`}
-                    id="geas-base-ref"
-                    environmentId={environmentId}
-                    cwd={project?.workspaceRoot ?? null}
-                    value={baseRef}
-                    onValueChange={setBaseRef}
-                    startFromOrigin={startFromOrigin}
-                    onStartFromOriginChange={setStartFromOrigin}
-                    disabled={saving}
-                  />
-                </Field>
-              ) : null}
-              <Field label="Model">
-                <div>
-                  <ProviderModelPicker
-                    environmentId={environmentId}
-                    disabled={saving}
-                    activeInstanceId={activeInstanceId}
-                    model={activeModel}
-                    lockedProvider={null}
-                    instanceEntries={instanceEntries}
-                    modelOptionsByInstance={getCustomModelOptionsByInstance(
-                      settings,
-                      providers,
-                      activeInstanceId,
-                      activeModel,
-                    )}
-                    isComposerOwned={false}
-                    triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-                    onInstanceModelChange={(instanceId, model) =>
-                      setChosenModel({ instanceId, model })
-                    }
-                  />
-                </div>
-              </Field>
-            </div>
-          </DialogPanel>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onClose()}>
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={!ready}
-              onClick={() => void submit(true)}
-            >
-              Add to backlog
-            </Button>
-            <Button type="submit" disabled={!ready}>
-              Enact
-            </Button>
-          </DialogFooter>
-        </form>
+                    </ComposerContextLabel>
+                  </ComposerSelectControl>
+                  <SelectPopup alignItemWithTrigger={false}>
+                    {projects.map((candidate) => (
+                      <SelectItem key={candidate.id} value={candidate.id}>
+                        {candidate.title}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+                <Separator orientation="vertical" className="mx-0.5 h-3.5!" />
+                <BranchToolbarEnvModeSelector
+                  envLocked={saving}
+                  effectiveEnvMode={envMode}
+                  activeWorktreePath={null}
+                  onEnvModeChange={setEnvMode}
+                />
+                {envMode === "worktree" ? (
+                  <div className="ml-auto flex min-w-0">
+                    <EnactBranchPicker
+                      key={`${environmentId}:${project?.id ?? ""}`}
+                      environmentId={environmentId}
+                      cwd={project?.workspaceRoot ?? null}
+                      value={baseRef}
+                      onValueChange={(branch) => {
+                        if (project === null) return;
+                        setBaseRefs((current) => ({ ...current, [project.id]: branch }));
+                      }}
+                      startFromOrigin={startFromOrigin}
+                      onStartFromOriginChange={setStartFromOrigin}
+                      disabled={saving}
+                    />
+                  </div>
+                ) : null}
+              </ComposerSurface.ContextStrip>
+            </ComposerSurface.Shell>
+          </form>
+        </DialogPanel>
       </DialogPopup>
     </Dialog>
   );
