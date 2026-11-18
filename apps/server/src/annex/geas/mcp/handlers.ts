@@ -32,6 +32,13 @@ const build = Effect.gen(function* () {
     return yield* run(service, thread.thread.threadId).pipe(Effect.mapError(invalid));
   });
 
+  const callerShell = Effect.fn("GeasMcp.callerShell")(function* (threadId: ThreadId) {
+    const threads = yield* ThreadManagementService.ThreadManagementService;
+    const caller = yield* threads.getThreadShell(threadId).pipe(Effect.orElseSucceed(() => null));
+    if (caller === null) return yield* invalid({ message: "The calling thread was not found." });
+    return caller;
+  });
+
   return {
     geas_get: McpToolAccess.reads(() =>
       asGeasThread((geas, threadId) => geas.getForThread(threadId)),
@@ -53,13 +60,7 @@ const build = Effect.gen(function* () {
     geas_enact: McpToolAccess.writesWithCapability(({ request, title, priority, start }) =>
       asGeasThread((geas, threadId) =>
         Effect.gen(function* () {
-          const threads = yield* ThreadManagementService.ThreadManagementService;
-          const caller = yield* threads
-            .getThreadShell(threadId)
-            .pipe(Effect.orElseSucceed(() => null));
-          if (caller === null) {
-            return yield* invalid({ message: "The calling thread was not found." });
-          }
+          const caller = yield* callerShell(threadId);
           return yield* geas.enact(
             {
               projectId: caller.projectId,
@@ -74,6 +75,14 @@ const build = Effect.gen(function* () {
             },
             { actor: "agent", creationSource: "mcp" },
           );
+        }),
+      ),
+    ),
+    geas_project_settings: McpToolAccess.writesWithCapability((changes) =>
+      asGeasThread((geas, threadId) =>
+        Effect.gen(function* () {
+          const caller = yield* callerShell(threadId);
+          return yield* geas.updateProjectSettings({ projectId: caller.projectId, ...changes });
         }),
       ),
     ),
