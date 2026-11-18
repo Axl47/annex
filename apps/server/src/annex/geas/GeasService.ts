@@ -46,6 +46,7 @@ import {
   type RuntimeMode,
 } from "@t3tools/contracts";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
+import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -575,7 +576,7 @@ const make = Effect.gen(function* () {
     const settings = resolveProjectSettings(yield* serverSettings.getSettings, projectId).settings;
     const result = yield* textGeneration.generateThreadTitle({
       cwd: project.value.workspaceRoot,
-      message: request,
+      message: assistantCitationsToPlainText(request),
       projectTitle: project.value.title,
       instructions: settings.threadTitleInstructions,
       modelSelection: settings.textGenerationModelSelection,

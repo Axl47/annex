@@ -8,6 +8,7 @@ import {
   type GeasStatus,
   type GrimoireProjectSettings,
 } from "@t3tools/contracts";
+import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 
 /** "Annex" → "ANX", "Theoria Codex" → "TC", "my-app" → "MA". */
 export function deriveKeyPrefix(projectName: string): string {
@@ -225,7 +226,8 @@ export function renderRunMessage(input: RunMessageInput): string {
         `## Conversation so far\n${earlier
           .map(
             (activity) =>
-              `- ${activity.author === "user" ? "User" : "Agent"} (${activity.createdAt}): ${truncate(activity.body, 600)}`,
+              // Clipping could cut a citation link in half, so older ones become plain quotes.
+              `- ${activity.author === "user" ? "User" : "Agent"} (${activity.createdAt}): ${truncate(assistantCitationsToPlainText(activity.body), 600)}`,
           )
           .join("\n")}`,
       );
