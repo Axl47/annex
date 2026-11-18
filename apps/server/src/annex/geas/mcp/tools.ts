@@ -6,6 +6,8 @@ import {
   GeasReportInput,
   GeasStatus,
   GeasSuggestedAction,
+  GrimoireProjectSettings,
+  GrimoireUpdateProjectSettingsInput,
   OrchestratorMcpFailure,
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
@@ -131,6 +133,19 @@ const GeasEnactTool = Tool.make("geas_enact", {
   .annotate(Tool.OpenWorld, false)
   .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
+const { projectId: _projectId, ...settingsFields } = GrimoireUpdateProjectSettingsInput.fields;
+
+const GeasProjectSettingsTool = Tool.make("geas_project_settings", {
+  ...shared,
+  description:
+    "Read or change the Grimoire settings of this thread's project, changing them only when the user asks: the geas key prefix, the check commands the server vouches for, the delivery buttons shown in review, and rules added to every geas run. Pass only what changes, or nothing to read; a list you pass replaces the whole list.",
+  parameters: Schema.Struct(settingsFields),
+  success: GrimoireProjectSettings,
+})
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.OpenWorld, false)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
+
 export const GeasToolkit = Toolkit.make(
   GeasGetTool,
   GeasReportWriteTool,
@@ -138,4 +153,5 @@ export const GeasToolkit = Toolkit.make(
   GeasCommentTool,
   GeasAttachMediaTool,
   GeasEnactTool,
+  GeasProjectSettingsTool,
 );
