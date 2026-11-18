@@ -309,6 +309,8 @@ export type GeasUpdateInput = typeof GeasUpdateInput.Type;
 export const GeasCommentInput = Schema.Struct({
   geasId: GeasId,
   body: TrimmedNonEmptyString.check(Schema.isMaxLength(20_000)),
+  /** Hold it for the next fresh run instead of steering a run that is going. */
+  queue: Schema.optional(Schema.Boolean),
 });
 export type GeasCommentInput = typeof GeasCommentInput.Type;
 
