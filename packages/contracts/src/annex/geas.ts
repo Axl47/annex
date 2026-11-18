@@ -236,6 +236,8 @@ export const GrimoireRow = Schema.Struct({
   priority: GeasPriority,
   labels: Schema.Array(Schema.String),
   threadId: Schema.NullOr(ThreadId),
+  /** The thread that laid it, such as a Familiar's channel; null when you enacted it. */
+  enactedByThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   runState: GeasRunState,
   needsYou: Schema.Boolean,
   modelSelection: ModelSelection,
