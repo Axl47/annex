@@ -26,7 +26,7 @@ a run failed, or a run ended without handing back a report.
   one.
 - Buttons under an agent's comment answer it. When it offers options, tick any and choose **Send**.
   Only the latest unanswered ask has live buttons.
-- Select text in the report to quote it, with the passage around it, in a comment, or to enact a
+- Select text in the report to cite it in a comment, the way **Cite** works in chat, or to enact a
   new geas about it in the same project. **Queue** hands that request to the geas's own agent
   instead, which files the new geas after its current run, with what it knows.
 - When a geas is in review, the delivery buttons send their prompt to the agent. **Land it** sends
