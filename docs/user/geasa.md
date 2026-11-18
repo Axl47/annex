@@ -26,8 +26,9 @@ a run failed, or a run ended without handing back a report.
   one.
 - Buttons under an agent's comment answer it. When it offers options, tick any and choose **Send**.
   Only the latest unanswered ask has live buttons.
-- Select text in the report to quote it in a comment, or to enact a new geas about it in the same
-  project.
+- Select text in the report to quote it, with the passage around it, in a comment, or to enact a
+  new geas about it in the same project. **Queue** hands that request to the geas's own agent
+  instead, which files the new geas after its current run, with what it knows.
 - When a geas is in review, the delivery buttons send their prompt to the agent. **Land it** sends
   "Land this." and **Full Stop** sends "Use Full Stop.", which run those skills if you have them.
 - Archiving a geas hides it from the Grimoire; the archive button there shows archived geasa again.
