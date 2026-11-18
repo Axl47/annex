@@ -96,7 +96,7 @@ failing_tests() {
 failed=false
 pnpm exec vp run typecheck >/dev/null || { echo "typecheck failed" >&2; failed=true; }
 touched=$(git diff --name-only upstream/main HEAD | awk -F/ '$1=="apps"||$1=="packages"{print $1"/"$2}' | sort -u)
-baseline=.git/annex-baseline
+baseline="$(git rev-parse --git-dir)/annex-baseline"
 git worktree remove --force "$baseline" 2>/dev/null || true
 for dir in $touched; do
   [ -f "$dir/package.json" ] || continue
