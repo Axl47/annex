@@ -480,6 +480,9 @@ const make = Effect.gen(function* () {
           runtimeMode,
           interactionMode,
           workspaceStrategy: { type: "root" },
+          ...(input.firstMessage === undefined
+            ? {}
+            : { initialMessage: { text: input.firstMessage, attachments: [] } }),
           createdBy: "user",
           creationSource: "web",
         })
@@ -510,7 +513,7 @@ const make = Effect.gen(function* () {
           );
       }
       yield* publish;
-      return { familiarId: FamiliarId.make(familiarId) };
+      return { familiarId: FamiliarId.make(familiarId), threadId: claimed };
     },
   );
 
