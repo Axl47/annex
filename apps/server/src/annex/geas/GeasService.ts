@@ -35,6 +35,7 @@ import {
   type GeasRunState,
   type GeasStatus,
   type GeasUpdateInput,
+  type FamiliarWakeEvent,
   type GrimoireProjectSettings,
   type GrimoireRow,
   type GrimoireSnapshot,
@@ -72,6 +73,7 @@ import { userFacingDispatchErrorMessage } from "../../orchestration-v2/UserFacin
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as TextGeneration from "../../textGeneration/TextGeneration.ts";
+import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
 import { runAnnexMigrations } from "../migrations.ts";
 import { geasThreads } from "./geasThreads.ts";
 import {
@@ -118,6 +120,7 @@ interface GeasRow {
   readonly report_json: string;
   readonly report_revision: number;
   readonly agent_runs_since_user: number;
+  readonly enacted_by_thread_id: string | null;
   readonly created_at: string;
   readonly updated_at: string;
   readonly archived_at: string | null;
@@ -198,6 +201,7 @@ const LIST_COLUMNS = [
   "priority",
   "labels_json",
   "thread_id",
+  "enacted_by_thread_id",
   "run_state",
   "needs_you",
   "model_selection_json",
@@ -217,6 +221,8 @@ const toListRow = (row: ListColumns): GrimoireRow => ({
   priority: row.priority,
   labels: LabelsJson.decode(row.labels_json),
   threadId: row.thread_id === null ? null : ThreadId.make(row.thread_id),
+  enactedByThreadId:
+    row.enacted_by_thread_id === null ? null : ThreadId.make(row.enacted_by_thread_id),
   runState: row.run_state,
   needsYou: row.needs_you === 1,
   modelSelection: ModelSelectionJson.decode(row.model_selection_json),
@@ -250,6 +256,19 @@ const firstLine = (text: string) => {
 export interface GeasCaller {
   readonly actor: "user" | "agent";
   readonly creationSource: OrchestrationV2CreationSource;
+  /** The agent thread that laid it, recorded so its geasa can wake it. */
+  readonly threadId?: ThreadId;
+}
+
+/** Something a geas did that may wake the thread that laid it; `idle` once no run is going. */
+export interface GeasWake {
+  readonly geasId: GeasId;
+  readonly key: string;
+  readonly title: string;
+  readonly threadId: ThreadId | null;
+  readonly enactedByThreadId: ThreadId;
+  readonly event: FamiliarWakeEvent | null;
+  readonly idle: boolean;
 }
 
 export class GeasStaleReportError extends Schema.TaggedError<GeasStaleReportError>()(
@@ -310,6 +329,22 @@ export class GeasService extends Context.Service<
       readonly actions: ReadonlyArray<GeasSuggestedAction>;
     }) => Effect.Effect<{ readonly activityId: string }, GeasError>;
     /** Copies a screenshot or clip from the geas's checkout into the attachment store. */
+    /** A Familiar's comment: it never counts as the user's, so it never resets the loop guard. */
+    readonly commentAsFamiliar: (input: {
+      readonly key: string;
+      readonly familiarName: string;
+      readonly body: string;
+      readonly queue: boolean;
+      /** False under Backlog only: the comment is recorded and no run starts. */
+      readonly mayStartRun: boolean;
+    }) => Effect.Effect<GeasMutationResult, GeasError>;
+    readonly getByKey: (key: string) => Effect.Effect<GeasDetail, GeasError>;
+    readonly listRows: Effect.Effect<ReadonlyArray<GrimoireRow>>;
+    /** A worktree on the project's default branch, honoring its start-from-origin setting. */
+    readonly defaultWorktree: (
+      projectId: ProjectId,
+    ) => Effect.Effect<OrchestrationV2ThreadLaunchWorkspaceStrategy, GeasError>;
+    readonly streamWakes: Stream.Stream<GeasWake>;
     readonly attachMedia: (input: {
       readonly threadId: ThreadId;
       readonly path: string;
@@ -332,6 +367,7 @@ const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const textGeneration = yield* TextGeneration.TextGeneration;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
+  const gitDriver = yield* GitVcsDriver.GitVcsDriver;
   const serviceScope = yield* Effect.scope;
 
   yield* runAnnexMigrations.pipe(Effect.orDie);
@@ -339,6 +375,20 @@ const make = Effect.gen(function* () {
   // `null` means every geas changed, e.g. after a project settings save.
   const changes = yield* PubSub.sliding<GeasId | null>(256);
   const publish = (geasId: GeasId | null) => PubSub.publish(changes, geasId).pipe(Effect.asVoid);
+  const wakes = yield* PubSub.unbounded<GeasWake>();
+  /** Only geasa an agent thread laid can wake anything. */
+  const publishWake = (row: GeasRow, event: FamiliarWakeEvent | null, idle: boolean) =>
+    row.enacted_by_thread_id === null
+      ? Effect.void
+      : PubSub.publish(wakes, {
+          geasId: GeasId.make(row.geas_id),
+          key: row.geas_key,
+          title: row.title,
+          threadId: row.thread_id === null ? null : ThreadId.make(row.thread_id),
+          enactedByThreadId: ThreadId.make(row.enacted_by_thread_id),
+          event,
+          idle,
+        }).pipe(Effect.asVoid);
   // One writer per geas, so status, report and run bookkeeping never interleave.
   const locks = new Map<string, Semaphore.Semaphore>();
   const withLock =
@@ -500,6 +550,15 @@ const make = Effect.gen(function* () {
 
   const isRunActive = (row: GeasRow) => row.run_state !== "idle";
 
+  /** True once the guard has stopped agents since the user's last comment. */
+  const loopGuardTripped = (geasId: string) =>
+    orDie(sql<{ n: number }>`
+      SELECT COUNT(*) AS n FROM annex_geas_activity
+      WHERE geas_id = ${geasId} AND event_type = 'loop_guard' AND seq > COALESCE(
+        (SELECT MAX(seq) FROM annex_geas_activity
+         WHERE geas_id = ${geasId} AND author = 'user' AND kind = 'comment'), 0)
+    `).pipe(Effect.map((rows) => rows[0]!.n > 0));
+
   const settleGeasThread = (geasId: string, threadId: ThreadId) =>
     Effect.flatMap(now, (at) =>
       threads.settleThread({
@@ -527,6 +586,9 @@ const make = Effect.gen(function* () {
       author,
       body: `${who} moved it from ${geasStatusLabel(row.status)} to ${geasStatusLabel(status)}.`,
     });
+    if (status === "in_review" || status === "done" || status === "canceled") {
+      yield* publishWake(row, status, !isRunActive(row));
+    }
     if (row.thread_id === null) return;
     const threadId = ThreadId.make(row.thread_id);
     // Done threads settle like any finished thread; reopening brings them back.
@@ -623,6 +685,7 @@ const make = Effect.gen(function* () {
     }) {
       const row = yield* requireGeas(input.geasId);
       if (input.startedBy === "agent" && row.agent_runs_since_user >= GEAS_AGENT_RUN_LIMIT) {
+        if (!(yield* loopGuardTripped(row.geas_id))) yield* publishWake(row, "loop_guard", true);
         yield* insertActivity({
           geasId: row.geas_id,
           kind: "event",
@@ -822,7 +885,7 @@ const make = Effect.gen(function* () {
               INSERT INTO annex_geas (
                 geas_id, project_id, geas_key, title, request, status, priority, labels_json,
                 last_activity_at, workspace_json, model_selection_json, runtime_mode,
-                interaction_mode, report_json, created_at, updated_at
+                interaction_mode, report_json, enacted_by_thread_id, created_at, updated_at
               ) VALUES (
                 ${geasId}, ${input.projectId}, ${key}, ${title},
                 ${input.request}, ${input.backlog === true ? "backlog" : "todo"},
@@ -831,7 +894,8 @@ const make = Effect.gen(function* () {
                 ${ModelSelectionJson.encode(input.modelSelection)},
                 ${input.runtimeMode ?? DEFAULT_RUNTIME_MODE},
                 ${input.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE},
-                ${ReportJson.encode(EMPTY_GEAS_REPORT)}, ${createdAt}, ${createdAt}
+                ${ReportJson.encode(EMPTY_GEAS_REPORT)}, ${caller.threadId ?? null},
+                ${createdAt}, ${createdAt}
               )
             `;
             return key;
@@ -965,10 +1029,11 @@ const make = Effect.gen(function* () {
   const archive: GeasService["Service"]["archive"] = Effect.fn("GeasService.archive")(
     function* (input) {
       const archivedAt = input.archived ? yield* now : null;
-      yield* requireGeas(input.geasId);
+      const row = yield* requireGeas(input.geasId);
       yield* orDie(
         sql`UPDATE annex_geas SET archived_at = ${archivedAt} WHERE geas_id = ${input.geasId}`,
       );
+      if (input.archived) yield* publishWake(row, "archived", !isRunActive(row));
       yield* publish(input.geasId);
       return { geasId: input.geasId };
     },
@@ -1188,11 +1253,146 @@ const make = Effect.gen(function* () {
           actions: input.actions,
           runId: run?.run_id ?? null,
         });
+        if (input.notify || input.actions.length > 0) {
+          yield* publishWake(row, "asked", run === undefined);
+        }
         yield* refresh(row.geas_id);
         return { activityId };
       }),
     );
   });
+
+  const requireByKey = Effect.fn("GeasService.requireByKey")(function* (key: string) {
+    const rows = yield* orDie(
+      sql<GeasRow>`SELECT * FROM annex_geas WHERE geas_key = ${key.trim().toUpperCase()}`,
+    );
+    const row = rows[0];
+    if (row === undefined) return yield* new GeasError({ message: `No geas ${key}.` });
+    return row;
+  });
+
+  const getByKey: GeasService["Service"]["getByKey"] = Effect.fn("GeasService.getByKey")(
+    function* (key) {
+      const row = yield* requireByKey(key);
+      return yield* readDetail(GeasId.make(row.geas_id));
+    },
+  );
+
+  const commentAsFamiliar: GeasService["Service"]["commentAsFamiliar"] = Effect.fn(
+    "GeasService.commentAsFamiliar",
+  )(function* (input) {
+    const found = yield* requireByKey(input.key);
+    const geasId = GeasId.make(found.geas_id);
+    yield* withLock(geasId)(
+      Effect.gen(function* () {
+        const row = yield* requireGeas(geasId);
+        // Past the guard a comment would let two agents keep each other running.
+        if (
+          row.agent_runs_since_user >= GEAS_AGENT_RUN_LIMIT ||
+          (yield* loopGuardTripped(geasId))
+        ) {
+          return yield* new GeasError({
+            message: `${row.geas_key} is waiting for the user after the loop guard stopped agents; it takes no agent comments until they reply.`,
+            geasId,
+          });
+        }
+        const run = yield* openRun(geasId);
+        const body = `✦ ${input.familiarName}: ${input.body}`;
+        yield* insertActivity({
+          geasId,
+          kind: "comment",
+          author: "agent",
+          body,
+          runId: run?.run_id ?? null,
+        });
+        if (isRunActive(row) && row.thread_id !== null) {
+          if (input.queue) {
+            yield* insertActivity({
+              geasId,
+              kind: "event",
+              eventType: "comment_queued",
+              author: "server",
+              body: `Queued: the next run starts with ${input.familiarName}'s comment.`,
+              runId: run?.run_id ?? null,
+            });
+            return yield* refresh(geasId);
+          }
+          const id = yield* newId("geas-familiar-steer");
+          yield* threads
+            .sendToThread({
+              projectId: ProjectId.make(row.project_id),
+              commandId: CommandId.make(`annex-geas-steer:${id}`),
+              threadId: ThreadId.make(row.thread_id),
+              messageId: MessageId.make(`annex-geas-steer-message:${id}`),
+              text: `New on ${row.geas_key} from ✦ ${input.familiarName}: ${input.body}`,
+              attachments: [],
+              mode: "steer",
+              createdBy: "agent",
+              creationSource: "mcp",
+            })
+            .pipe(
+              Effect.catchTags({
+                ThreadManagementNoSteerableRunError: () =>
+                  insertActivity({
+                    geasId,
+                    kind: "event",
+                    eventType: "comment_queued",
+                    author: "server",
+                    body: "The agent can't take the comment mid-run, so the next run starts with it.",
+                    runId: run?.run_id ?? null,
+                  }),
+              }),
+              Effect.mapError(failWith("Could not pass the comment to the running agent.", geasId)),
+            );
+          return yield* refresh(geasId);
+        }
+        yield* refresh(geasId);
+        const startable =
+          !input.queue &&
+          input.mayStartRun &&
+          row.status !== "backlog" &&
+          row.status !== "done" &&
+          row.status !== "canceled";
+        if (startable) yield* startRun({ geasId, startedBy: "agent", creationSource: "mcp" });
+      }),
+    );
+    return { geasId };
+  });
+
+  const listRows: GeasService["Service"]["listRows"] = Effect.map(
+    Effect.suspend(() => listSnapshot({})),
+    (snapshot) => snapshot.geasa,
+  );
+
+  const defaultWorktree: GeasService["Service"]["defaultWorktree"] = Effect.fn(
+    "GeasService.defaultWorktree",
+  )(function* (projectId) {
+    const project = yield* projects.getById(projectId).pipe(Effect.orElseSucceed(Option.none));
+    if (Option.isNone(project)) {
+      return yield* new GeasError({ message: "That project is not on this environment." });
+    }
+    const cwd = project.value.workspaceRoot;
+    const settings = resolveProjectSettings(
+      yield* serverSettings.getSettings.pipe(Effect.mapError(failWith("Could not read settings."))),
+      projectId,
+    ).settings;
+    const remote = yield* gitDriver
+      .resolvePrimaryRemoteName(cwd)
+      .pipe(Effect.orElseSucceed(() => null));
+    const branch =
+      remote === null
+        ? null
+        : yield* gitDriver
+            .resolveDefaultBranchName(cwd, remote)
+            .pipe(Effect.orElseSucceed(() => null));
+    return {
+      type: "worktree" as const,
+      baseRef: branch ?? "HEAD",
+      ...(branch !== null && settings.newWorktreesStartFromOrigin ? { startFromOrigin: true } : {}),
+    };
+  });
+
+  const streamWakes: GeasService["Service"]["streamWakes"] = Stream.fromPubSub(wakes);
 
   const attachMedia: GeasService["Service"]["attachMedia"] = Effect.fn("GeasService.attachMedia")(
     function* (input) {
@@ -1330,6 +1530,7 @@ const make = Effect.gen(function* () {
         runId: run.run_id,
       });
     }
+    yield* publishWake(current, outcome === "failed" ? "run_failed" : null, true);
     if (current.status === "done" || current.status === "canceled") {
       yield* settleGeasThread(row.geas_id, ThreadId.make(row.thread_id!));
       return yield* refresh(row.geas_id);
@@ -1504,6 +1705,11 @@ const make = Effect.gen(function* () {
     writeReport,
     setStatusAsAgent,
     commentAsAgent,
+    commentAsFamiliar,
+    getByKey,
+    listRows,
+    defaultWorktree,
+    streamWakes,
     attachMedia,
     handleEvent,
   });
