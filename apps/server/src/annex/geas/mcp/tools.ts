@@ -9,6 +9,7 @@ import {
   GrimoireProjectSettings,
   GrimoireUpdateProjectSettingsInput,
   OrchestratorMcpFailure,
+  ProjectId,
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -116,7 +117,7 @@ const GeasAttachMediaTool = geasTool(
 const GeasEnactTool = Tool.make("geas_enact", {
   ...shared,
   description:
-    "File a new geas in this thread's project, only when the user asks for one. It lands in the backlog unless `start` is true, and runs with this thread's model and modes.",
+    "File a new geas: a piece of work a fresh agent does in its own thread and reports on. Use it when the user asks for one, or when a standing instruction you were given does, such as a routine's prompt or your Tome. It runs with this thread's model and modes. Outside a Familiar's channel it lands in the backlog unless `start` is true.",
   parameters: Schema.Struct({
     request: TrimmedNonEmptyString.check(Schema.isMaxLength(20_000)).annotate({
       description: "What to do, written so a fresh agent can act on it alone.",
@@ -124,7 +125,21 @@ const GeasEnactTool = Tool.make("geas_enact", {
     title: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(200))),
     priority: Schema.optionalKey(GeasPriority),
     start: Schema.optionalKey(
-      Schema.Boolean.annotate({ description: "Start a run now instead of filing it." }),
+      Schema.Boolean.annotate({
+        description:
+          "Start a run now instead of filing it. In a Familiar's channel your autonomy sets the default.",
+      }),
+    ),
+    projectId: Schema.optionalKey(
+      ProjectId.annotate({
+        description: "Another project on this environment. Default: this one.",
+      }),
+    ),
+    workspace: Schema.optionalKey(
+      Schema.Literals(["worktree", "root"]).annotate({
+        description:
+          "worktree (default) gives the geas a new worktree; root runs it in the project's own checkout, for work that must happen there.",
+      }),
     ),
   }),
   success: Schema.Struct({ geasId: Schema.String, key: Schema.String }),
