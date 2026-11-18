@@ -18,16 +18,39 @@ const channel: FamiliarChannel = {
   tomeRevision: 3,
 };
 
-const thread = (id: string, nativeId: string | null): ProviderThreadSession => ({
+const thread = (
+  id: string,
+  nativeId: string | null,
+  runs: { first: number; last: number } | null = null,
+): ProviderThreadSession => ({
   id,
   nativeThreadRef: nativeId === null ? null : { nativeId },
+  firstRunOrdinal: runs?.first ?? null,
+  lastRunOrdinal: runs?.last ?? null,
 });
+
+const r = (first: number, last: number) => ({ first, last });
 
 describe("familiarTurnContext", () => {
   it.each([
-    { case: "first turn", before: thread("p1", null), after: thread("p1", "n1") },
-    { case: "fresh_session run", before: thread("p2", null), after: thread("p2", "n2") },
-    { case: "resume fell back", before: thread("p1", "n1"), after: thread("p1", "n9") },
+    { case: "first turn", before: thread("p1", null), after: thread("p1", "n1", r(1, 1)) },
+    { case: "fresh_session run", before: thread("p2", null), after: thread("p2", "n2", r(4, 4)) },
+    {
+      case: "resume fell back",
+      before: thread("p1", "n1", r(1, 3)),
+      after: thread("p1", "n9", r(1, 4)),
+    },
+    {
+      // Claude names its native session when the provider thread is created, before any turn.
+      case: "native id assigned up front",
+      before: thread("p1", "n1"),
+      after: thread("p1", "n1", r(1, 1)),
+    },
+    {
+      case: "first run retried",
+      before: thread("p1", "n1", r(1, 1)),
+      after: thread("p1", "n1", r(1, 1)),
+    },
   ])("sends the whole preamble on a new session: $case", ({ before, after }) => {
     const text = familiarTurnContext({ channel, skip: false, before, after, delivered: new Map() });
     expect(text).toContain("✦ Sync");
@@ -37,7 +60,7 @@ describe("familiarTurnContext", () => {
 
   it("sends nothing on a resumed session, then one line once the Tome changes", () => {
     const delivered = new Map<string, number>();
-    const resumed = { before: thread("p1", "n1"), after: thread("p1", "n1") };
+    const resumed = { before: thread("p1", "n1", r(1, 1)), after: thread("p1", "n1", r(1, 2)) };
     familiarTurnContext({ channel, skip: false, ...resumed, delivered });
     expect(familiarTurnContext({ channel, skip: false, ...resumed, delivered })).toBe("");
     const edited = { ...channel, tomeRevision: 4 };
@@ -48,7 +71,11 @@ describe("familiarTurnContext", () => {
   });
 
   it("sends nothing on goal and compact turns, or outside a channel", () => {
-    const fresh = { before: thread("p1", null), after: thread("p1", "n1"), delivered: new Map() };
+    const fresh = {
+      before: thread("p1", null),
+      after: thread("p1", "n1", r(1, 1)),
+      delivered: new Map(),
+    };
     expect(familiarTurnContext({ channel, skip: true, ...fresh })).toBe("");
     expect(familiarTurnContext({ channel: undefined, skip: false, ...fresh })).toBe("");
   });
