@@ -14,6 +14,7 @@ import {
   MessageSquareIcon,
   PauseIcon,
   PlayIcon,
+  PlusIcon,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
@@ -40,6 +41,7 @@ import { serverEnvironment } from "../state/server";
 import { useAtomCommand } from "../state/use-atom-command";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { GrimoireRowItem } from "./GrimoirePage";
+import { RoutineDialog } from "./RoutineDialog";
 import {
   FAMILIAR_STATE_LABELS,
   FAMILIAR_WAKE_LABELS,
@@ -368,16 +370,33 @@ function FamiliarRoutines({
     (task) => familiar.threadId !== null && task.threadId === familiar.threadId,
   );
   const held = new Set<string>(familiar.heldTaskIds);
+  const canAdd = useAtomValue(serverEnvironment.upsertScheduledTask.permissionAtom(environmentId));
+  const [adding, setAdding] = useState(false);
   return (
     <Section
       title="Routines"
-      hint={`Scheduled tasks that post to this channel. Ask ${familiar.name} to schedule one, or add one in Settings.`}
+      hint={`Scheduled tasks that post to this channel. Add one here, or ask ${familiar.name} to schedule one.`}
       action={
-        <Button variant="ghost" size="sm" render={<Link to="/settings/scheduled-tasks" />}>
-          Scheduled tasks
-        </Button>
+        <div className="flex gap-1">
+          <Button variant="ghost" size="sm" render={<Link to="/settings/scheduled-tasks" />}>
+            Scheduled tasks
+          </Button>
+          {familiar.threadId !== null && familiar.archivedAt === null ? (
+            <Button variant="outline" size="sm" disabled={!canAdd} onClick={() => setAdding(true)}>
+              <PlusIcon />
+              Add routine
+            </Button>
+          ) : null}
+        </div>
       }
     >
+      {adding ? (
+        <RoutineDialog
+          environmentId={environmentId}
+          familiar={familiar}
+          onClose={() => setAdding(false)}
+        />
+      ) : null}
       {tasks.length === 0 ? (
         <p className="px-2 text-sm text-muted-foreground">None yet.</p>
       ) : (
