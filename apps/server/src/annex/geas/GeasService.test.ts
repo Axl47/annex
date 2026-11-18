@@ -17,6 +17,8 @@ import * as ThreadLaunchService from "../../orchestration-v2/ThreadLaunchService
 import * as ThreadManagementService from "../../orchestration-v2/ThreadManagementService.ts";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
+import * as ServerSettings from "../../serverSettings.ts";
+import * as TextGeneration from "../../textGeneration/TextGeneration.ts";
 import * as GeasService from "./GeasService.ts";
 
 const projectId = ProjectId.make("project-annex");
@@ -28,6 +30,8 @@ function makeHarness() {
   const dispatched: Array<string> = [];
   const shell: { current: unknown } = { current: null };
   const steerable = { current: true };
+  // Never resolves unless a test sets it, so titles stay put in tests about something else.
+  const generatedTitle: { current: string | null } = { current: null };
   let sent = 0;
   const layer = GeasService.layer.pipe(
     Layer.provide(
@@ -73,13 +77,20 @@ function makeHarness() {
           getById: () =>
             Effect.succeedSome({ title: "Annex", workspaceRoot: "/tmp/annex" } as never),
         }),
+        Layer.mock(TextGeneration.TextGeneration)({
+          generateThreadTitle: () =>
+            generatedTitle.current === null
+              ? Effect.never
+              : Effect.succeed({ title: generatedTitle.current }),
+        }),
+        ServerSettings.layerTest({}),
         Layer.fresh(SqlitePersistence.layerMemory),
         ServerConfig.layerTest(process.cwd(), { prefix: "annex-geas-test-" }),
       ),
     ),
     Layer.provideMerge(NodeServices.layer),
   );
-  return { layer, launches, sends, dispatched, shell, steerable };
+  return { layer, launches, sends, dispatched, shell, steerable, generatedTitle };
 }
 
 const runEnded = (threadId: ThreadId, runId: string, status = "completed") =>
@@ -118,6 +129,21 @@ describe("GeasService", () => {
       assert.strictEqual(detail.status, "in_progress");
       assert.strictEqual(detail.runState, "running");
       assert.strictEqual((yield* enact(geas)).key, "ANX-2");
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("titles a geas enacted without one, and renames its thread", () => {
+    const harness = makeHarness();
+    harness.generatedTitle.current = "Faster sidebar";
+    return Effect.gen(function* () {
+      const geas = yield* GeasService.GeasService;
+      const { geasId } = yield* enact(geas);
+      const titled = yield* geas.subscribeGeas(geasId).pipe(
+        Stream.filter((detail) => detail.title === "Faster sidebar"),
+        Stream.runHead,
+      );
+      assert.isTrue(Option.isSome(titled));
+      assert.include(harness.dispatched, "thread.metadata.update");
     }).pipe(Effect.provide(harness.layer));
   });
 
