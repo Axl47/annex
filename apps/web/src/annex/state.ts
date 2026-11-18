@@ -1,10 +1,18 @@
+import { createFamiliarAtoms } from "@t3tools/client-runtime/annex/familiars";
 import { createGrimoireAtoms } from "@t3tools/client-runtime/annex/grimoire";
-import type { EnvironmentId, GeasStatus, GrimoireRow } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  Familiar,
+  FamiliarWakeEvent,
+  GeasStatus,
+  GrimoireRow,
+} from "@t3tools/contracts";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 
 export const grimoireAtoms = createGrimoireAtoms(connectionAtomRuntime);
+export const familiarAtoms = createFamiliarAtoms(connectionAtomRuntime);
 
 /** The environment the Grimoire shows: the chosen one, else this machine's, else the first connected. */
 export function useGrimoireEnvironmentId(chosen: EnvironmentId | undefined): EnvironmentId | null {
@@ -73,3 +81,42 @@ export function groupGrimoire(rows: ReadonlyArray<GrimoireRow>) {
     return group === undefined ? [] : [{ id, label: GROUP_LABELS[id], rows: group }];
   });
 }
+
+export const FAMILIAR_WAKE_LABELS: Record<FamiliarWakeEvent, string> = {
+  asked: "asks for input",
+  in_review: "moved to In review",
+  run_failed: "a run failed",
+  loop_guard: "loop guard stopped it",
+  done: "landed",
+  canceled: "canceled",
+  archived: "archived",
+};
+
+/** Matches the server's local budget day closely enough for a label. */
+function localDay(epochMillis: number): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(epochMillis);
+}
+
+export type FamiliarState = "dismissed" | "paused" | "spent" | "active";
+
+export function familiarState(familiar: Familiar, nowMillis: number): FamiliarState {
+  if (familiar.archivedAt !== null) return "dismissed";
+  if (familiar.pausedAt !== null) return "paused";
+  return familiarRunsToday(familiar, nowMillis) >= familiar.dailyRunBudget ? "spent" : "active";
+}
+
+/** The count resets on a new day even before the server's next sweep stores it. */
+export function familiarRunsToday(familiar: Familiar, nowMillis: number): number {
+  return familiar.runsDay === localDay(nowMillis) ? familiar.runsToday : 0;
+}
+
+export const FAMILIAR_STATE_LABELS: Record<FamiliarState, string> = {
+  dismissed: "Dismissed",
+  paused: "Paused",
+  spent: "Budget spent for today",
+  active: "Active",
+};
