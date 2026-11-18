@@ -46,6 +46,7 @@ import {
   type RuntimeMode,
 } from "@t3tools/contracts";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -68,6 +69,8 @@ import * as ThreadLaunchService from "../../orchestration-v2/ThreadLaunchService
 import * as ThreadManagementService from "../../orchestration-v2/ThreadManagementService.ts";
 import { userFacingDispatchErrorMessage } from "../../orchestration-v2/UserFacingErrors.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
+import * as ServerSettings from "../../serverSettings.ts";
+import * as TextGeneration from "../../textGeneration/TextGeneration.ts";
 import { runAnnexMigrations } from "../migrations.ts";
 import { geasThreads } from "./geasThreads.ts";
 import {
@@ -326,6 +329,9 @@ const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;
+  const textGeneration = yield* TextGeneration.TextGeneration;
+  const serverSettings = yield* ServerSettings.ServerSettingsService;
+  const serviceScope = yield* Effect.scope;
 
   yield* runAnnexMigrations.pipe(Effect.orDie);
 
@@ -540,6 +546,55 @@ const make = Effect.gen(function* () {
     }
   });
 
+  const renameThread = Effect.fn("GeasService.renameThread")(function* (
+    row: GeasRow,
+    title: string,
+  ) {
+    if (row.thread_id === null) return;
+    yield* threads
+      .dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make(yield* newId("annex-geas-rename")),
+        threadId: ThreadId.make(row.thread_id),
+        title: `${row.geas_key} · ${title}`,
+      })
+      .pipe(
+        Effect.catchCause((cause) => Effect.logWarning("geas thread rename failed", { cause })),
+      );
+  });
+
+  /** Titles a geas enacted without one, the way threads are titled; the first line stands in until then. */
+  const generateTitle = Effect.fn("GeasService.generateTitle")(function* (
+    geasId: GeasId,
+    projectId: ProjectId,
+    request: string,
+    placeholder: string,
+  ) {
+    const project = yield* projects.getById(projectId).pipe(Effect.orElseSucceed(Option.none));
+    if (Option.isNone(project)) return;
+    const settings = resolveProjectSettings(yield* serverSettings.getSettings, projectId).settings;
+    const result = yield* textGeneration.generateThreadTitle({
+      cwd: project.value.workspaceRoot,
+      message: request,
+      projectTitle: project.value.title,
+      instructions: settings.threadTitleInstructions,
+      modelSelection: settings.textGenerationModelSelection,
+      projectId,
+    });
+    const title = result.title.trim().slice(0, 200);
+    if (title === "" || title === "New thread") return;
+    yield* withLock(geasId)(
+      Effect.gen(function* () {
+        const row = yield* selectGeas(geasId);
+        // A rename while the title was generating wins.
+        if (row === undefined || row.title !== placeholder) return;
+        yield* orDie(sql`UPDATE annex_geas SET title = ${title} WHERE geas_id = ${geasId}`);
+        yield* renameThread(row, title);
+        yield* refresh(geasId);
+      }),
+    );
+  });
+
   const runMessage = Effect.fn("GeasService.runMessage")(function* (geasId: GeasId) {
     const detail = yield* readDetail(geasId);
     const runs = yield* selectRuns(geasId);
@@ -739,6 +794,7 @@ const make = Effect.gen(function* () {
     function* (input, caller) {
       const geasId = GeasId.make(yield* newId("geas"));
       const createdAt = yield* now;
+      const title = input.title ?? firstLine(input.request);
       const key = yield* sql
         .withTransaction(
           Effect.gen(function* () {
@@ -754,7 +810,7 @@ const make = Effect.gen(function* () {
                 last_activity_at, workspace_json, model_selection_json, runtime_mode,
                 interaction_mode, report_json, created_at, updated_at
               ) VALUES (
-                ${geasId}, ${input.projectId}, ${key}, ${input.title ?? firstLine(input.request)},
+                ${geasId}, ${input.projectId}, ${key}, ${title},
                 ${input.request}, ${input.backlog === true ? "backlog" : "todo"},
                 ${input.priority ?? "none"}, ${LabelsJson.encode(input.labels ?? [])}, ${createdAt},
                 ${WorkspaceJson.encode(input.workspace)},
@@ -775,6 +831,14 @@ const make = Effect.gen(function* () {
         body: input.request,
       });
       yield* refresh(geasId);
+      if (input.title === undefined) {
+        yield* generateTitle(geasId, input.projectId, input.request, title).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("geas title generation failed", { cause }),
+          ),
+          Effect.forkIn(serviceScope),
+        );
+      }
       if (input.backlog !== true) {
         yield* withLock(geasId)(
           startRun({
@@ -813,6 +877,9 @@ const make = Effect.gen(function* () {
               updated_at = ${updatedAt}
             WHERE geas_id = ${row.geas_id}
           `);
+          if (input.title !== undefined && input.title !== row.title) {
+            yield* renameThread(row, input.title);
+          }
           if (input.status !== undefined) yield* setStatus(row, input.status, "user");
           yield* refresh(row.geas_id);
         }),
@@ -894,7 +961,16 @@ const make = Effect.gen(function* () {
   const updateProjectSettings: GeasService["Service"]["updateProjectSettings"] = Effect.fn(
     "GeasService.updateProjectSettings",
   )(function* (input) {
-    const current = toSettings(yield* ensureSettings(input.projectId));
+    const stored = yield* ensureSettings(input.projectId);
+    const current = toSettings(stored);
+    if (
+      input.keyPrefix === undefined &&
+      input.deliveryActions === undefined &&
+      input.checks === undefined &&
+      input.rules === undefined
+    ) {
+      return current;
+    }
     if (input.keyPrefix !== undefined && input.keyPrefix !== current.keyPrefix) {
       const clash = yield* orDie(
         sql<{ project_id: string }>`
@@ -915,7 +991,7 @@ const make = Effect.gen(function* () {
     yield* orDie(sql`
       UPDATE annex_project_settings SET
         key_prefix = ${input.keyPrefix ?? current.keyPrefix},
-        delivery_actions_json = ${DeliveryActionsJson.encode(input.deliveryActions ?? current.deliveryActions)},
+        delivery_actions_json = ${input.deliveryActions === undefined ? stored.delivery_actions_json : DeliveryActionsJson.encode(input.deliveryActions)},
         checks_json = ${ChecksJson.encode(input.checks ?? current.checks)},
         rules = ${input.rules ?? current.rules}
       WHERE project_id = ${input.projectId}
