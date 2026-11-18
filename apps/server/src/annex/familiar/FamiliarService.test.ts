@@ -56,6 +56,7 @@ function makeHarness(
   events: Queue.Queue<OrchestrationV2DomainEvent>,
 ) {
   const sends: Array<ThreadManagementService.ThreadManagementSendInput> = [];
+  const launches: Array<ThreadLaunchService.ThreadLaunchInput> = [];
   const dispatched: Array<{ readonly type: string; readonly enabled?: boolean }> = [];
   const tasks = new Map<string, ScheduledTask>();
   const sql = Layer.effectDiscard(Effect.orDie(runAnnexMigrations)).pipe(
@@ -66,10 +67,9 @@ function makeHarness(
       Layer.mergeAll(
         Layer.mock(ThreadLaunchService.ThreadLaunchService)({
           launch: (input) =>
-            Effect.succeed({
-              threadId: input.threadId!,
-              resumed: false,
-              projection: null as never,
+            Effect.sync(() => {
+              launches.push(input);
+              return { threadId: input.threadId!, resumed: false, projection: null as never };
             }),
         }),
         Layer.mock(ThreadManagementService.ThreadManagementService)({
@@ -104,7 +104,7 @@ function makeHarness(
     Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "annex-familiar-test-" })),
     Layer.provideMerge(NodeServices.layer),
   );
-  return { layer, sends, dispatched, tasks, wakes, events };
+  return { layer, sends, launches, dispatched, tasks, wakes, events };
 }
 
 const summonSync = Effect.gen(function* () {
@@ -115,6 +115,7 @@ const summonSync = Effect.gen(function* () {
     projectId,
     modelSelection,
     dailyRunBudget: 2,
+    firstMessage: "Check upstream now.",
   });
   return familiarId;
 });
@@ -155,22 +156,29 @@ const routineMessage = (threadId: ThreadId, id: string) =>
   }) as unknown as OrchestrationV2DomainEvent;
 
 describe("FamiliarService", () => {
-  it.effect("summons a pinned channel that never auto-settles", () => {
-    return withHarness((harness) =>
-      Effect.gen(function* () {
-        const familiarId = yield* summonSync;
-        const familiar = yield* familiarWhen(familiarId, () => true);
-        assert.isTrue(familiarChannels.has(familiar.threadId!));
-        assert.deepStrictEqual(
-          harness.dispatched.map(({ type, enabled }) => ({ type, enabled })),
-          [
-            { type: "thread.pin", enabled: undefined },
-            { type: "thread.auto-settle.set", enabled: false },
-          ],
-        );
-      }),
-    );
-  });
+  it.effect(
+    "summons a pinned channel that never auto-settles, opening with the first message",
+    () => {
+      return withHarness((harness) =>
+        Effect.gen(function* () {
+          const familiarId = yield* summonSync;
+          const familiar = yield* familiarWhen(familiarId, () => true);
+          assert.isTrue(familiarChannels.has(familiar.threadId!));
+          assert.deepStrictEqual(harness.launches[0]?.initialMessage, {
+            text: "Check upstream now.",
+            attachments: [],
+          });
+          assert.deepStrictEqual(
+            harness.dispatched.map(({ type, enabled }) => ({ type, enabled })),
+            [
+              { type: "thread.pin", enabled: undefined },
+              { type: "thread.auto-settle.set", enabled: false },
+            ],
+          );
+        }),
+      );
+    },
+  );
 
   it.effect("sets up a Claude · Familiars instance the Claude driver accepts", () => {
     return withHarness(() =>

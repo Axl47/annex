@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, Familiar, FamiliarsSnapshot } from "@t3tools/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ArchiveIcon, PlusIcon, Settings2Icon, CatIcon } from "lucide-react";
@@ -41,6 +42,7 @@ import { useProjects } from "../state/entities";
 import { useEnvironments } from "../state/environments";
 import { useEnvironmentQuery } from "../state/query";
 import { useAtomCommand } from "../state/use-atom-command";
+import { buildThreadRouteParams } from "../threadRoutes";
 import {
   FAMILIAR_STATE_LABELS,
   familiarAtoms,
@@ -226,16 +228,22 @@ function Familiars({
         <SummonDialog
           environmentId={environmentId}
           claudeInstance={query.data.claudeInstance}
-          onClose={(familiarId) => {
-            if (familiarId === undefined) {
+          onClose={(summoned) => {
+            if (summoned === undefined) {
               setSummoning(false);
-            } else {
-              setSummonClicked(false);
-              void navigate({
-                to: "/familiars/$environmentId/$familiarId",
-                params: { environmentId, familiarId },
-              });
+              return;
             }
+            setSummonClicked(false);
+            // The channel is where you talk to it, so that's where a new Familiar opens.
+            void (summoned.threadId === undefined
+              ? navigate({
+                  to: "/familiars/$environmentId/$familiarId",
+                  params: { environmentId, familiarId: summoned.familiarId },
+                })
+              : navigate({
+                  to: "/$environmentId/$threadId",
+                  params: buildThreadRouteParams(scopeThreadRef(environmentId, summoned.threadId)),
+                }));
           }}
         />
       ) : null}
