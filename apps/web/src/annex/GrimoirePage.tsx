@@ -1,7 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, GrimoireRow } from "@t3tools/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArchiveIcon, BookOpenIcon, PlusIcon, Settings2Icon } from "lucide-react";
+import * as Schema from "effect/Schema";
+import { ArchiveIcon, BookOpenIcon, ChevronRightIcon, PlusIcon, Settings2Icon } from "lucide-react";
 import { useState } from "react";
 
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../components/WorkspaceBreadcrumb";
@@ -24,7 +25,9 @@ import {
 } from "../components/ui/select";
 import { SidebarInset } from "../components/ui/sidebar";
 import { isElectron } from "../env";
+import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
+import { cn } from "../lib/utils";
 import { useProjects } from "../state/entities";
 import { useEnvironments } from "../state/environments";
 import { useEnvironmentQuery } from "../state/query";
@@ -33,6 +36,9 @@ import { EnactDialog } from "./EnactDialog";
 import { GeasRunDot, GeasStatusIcon } from "./geasPresentation";
 import { GrimoireSettingsDialog } from "./GrimoireSettingsDialog";
 import { grimoireAtoms, groupGrimoire, useGrimoireEnvironmentId } from "./state";
+
+const CollapsedGroups = Schema.Array(Schema.String);
+const NO_GROUPS: ReadonlyArray<string> = [];
 
 export interface GrimoireSearch {
   readonly environmentId?: EnvironmentId;
@@ -97,6 +103,11 @@ function Grimoire({
       .map((project) => [project.id as string, project.title]),
   );
   const groups = groupGrimoire(query.data?.geasa ?? []);
+  const [collapsed, setCollapsed] = useLocalStorage(
+    "annex:grimoire-collapsed-groups",
+    NO_GROUPS,
+    CollapsedGroups,
+  );
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
@@ -188,20 +199,39 @@ function Grimoire({
             ) : null}
             {groups.map((group) => (
               <section key={group.id} className="flex flex-col gap-1">
-                <h2 className="px-2 text-xs font-medium text-muted-foreground">
-                  {group.label}
-                  <span className="ml-1.5 text-muted-foreground/70">{group.rows.length}</span>
-                </h2>
-                <ul className="flex flex-col">
-                  {group.rows.map((row) => (
-                    <GrimoireRowItem
-                      key={row.id}
-                      environmentId={environmentId}
-                      row={row}
-                      projectTitle={projectTitles.get(row.projectId) ?? null}
+                <h2 className="text-xs font-medium text-muted-foreground">
+                  <button
+                    type="button"
+                    aria-expanded={!collapsed.includes(group.id)}
+                    className="flex items-center gap-1 rounded-sm px-2 py-0.5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    onClick={() =>
+                      setCollapsed((current) =>
+                        current.includes(group.id)
+                          ? current.filter((id) => id !== group.id)
+                          : [...current, group.id],
+                      )
+                    }
+                  >
+                    <ChevronRightIcon
+                      aria-hidden="true"
+                      className={cn("size-3", !collapsed.includes(group.id) && "rotate-90")}
                     />
-                  ))}
-                </ul>
+                    {group.label}
+                    <span className="ml-0.5 text-muted-foreground/70">{group.rows.length}</span>
+                  </button>
+                </h2>
+                {collapsed.includes(group.id) ? null : (
+                  <ul className="flex flex-col">
+                    {group.rows.map((row) => (
+                      <GrimoireRowItem
+                        key={row.id}
+                        environmentId={environmentId}
+                        row={row}
+                        projectTitle={projectTitles.get(row.projectId) ?? null}
+                      />
+                    ))}
+                  </ul>
+                )}
               </section>
             ))}
           </WorkspacePageContainer>

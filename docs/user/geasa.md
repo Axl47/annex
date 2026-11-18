@@ -9,11 +9,12 @@ conversation. Geasa live in the **Grimoire**, which you open from the book icon 
 
 1. In the Grimoire, choose **Enact**, or choose **Enact a geas** in the command palette.
 2. Describe the work and what done looks like. Pick the project, a workspace (a new worktree or the
-   project checkout), and a model.
+   project checkout), and a model. Annex remembers these for the next geas.
 3. Choose **Enact** to start now, or **Add to backlog** to start it later.
 
 Each geas gets a key such as `ANX-12`. The prefix comes from the project name; you can change it in
-the Grimoire settings.
+the Grimoire settings. The title is written from your request, the way thread titles are; select it
+on the geas page to rename it.
 
 ## Review and steer
 
@@ -25,8 +26,10 @@ a run failed, or a run ended without handing back a report.
   one.
 - Buttons under an agent's comment answer it. When it offers options, tick any and choose **Send**.
   Only the latest unanswered ask has live buttons.
+- Select text in the report to quote it in a comment, or to enact a new geas about it in the same
+  project.
 - When a geas is in review, the delivery buttons send their prompt to the agent. **Land it** sends
-  "Land this.", which runs your land skill if you have one.
+  "Land this." and **Full Stop** sends "Use Full Stop.", which run those skills if you have them.
 - Archiving a geas hides it from the Grimoire; the archive button there shows archived geasa again.
 - Moving a geas to **Done** or **Canceled** settles its thread; moving it back unsettles it. A geas
   in review moves to Done on its own when its pull request merges.
@@ -47,3 +50,5 @@ Open the gear in the Grimoire to set, per project:
 - **Checks**: the commands described above.
 - **Delivery actions**: the buttons shown on a geas in review and the prompt each sends.
 - **Rules**: text added to the instructions of every run in that project.
+
+You can also ask an agent in any thread to set these up for its project.
