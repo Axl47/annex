@@ -213,3 +213,15 @@ Architecture and its constraints: `docs/internals/overview.md`. Glossary: `docs/
 ## Additional tips
 
 - Security is important, but should not be over-indexed on, especially for dev mode/maintainer-only features.
+
+## Fork
+
+This repo is Annex, a fork of pingdotgg/t3code for personal experiments. No features are planned for upstream: never open upstream pull requests or issues, and never push to the `upstream` remote. Upstream ships daily, and it is the source of every fix Annex gets. So the fork's one hard requirement is that its changes keep replaying onto upstream with almost no conflicts.
+
+- **How changes replay.** `annex/sync.sh` runs nightly. It takes `upstream/main` fresh, cherry-picks each Annex commit onto it in order, re-runs `annex/rebrand.sh`, and checks the result. A conflict stops the sync, so every line Annex changes in an upstream file is a future conflict.
+- **Prefer new files.** Put features in new modules, packages, or routes, and under `annex/` for tooling. When an upstream file has to change, make the smallest seam possible, such as one import, one registration line, or one hook call, rather than editing logic in place. Never reformat, reorder, or rename upstream code you aren't otherwise changing.
+- **Renames go in `annex/rebrand.sh`.** Names, ids, branding, and anything else that is a find-and-replace over upstream belong there, each with an `expect` line so a missed substitution fails loudly. Its output is the generated `chore(annex): rebrand to Annex` commit. Never edit that commit by hand: the sync drops it and regenerates it every time. `README.md` and this section are generated too, from `annex/README.md` and `annex/AGENTS.md`.
+- **One concern per commit.** Commits are the unit the sync replays, so keep each self-contained, with a Conventional Commit message. If a commit starts conflicting often, rework it into a smaller seam rather than resolving it again every night.
+- **No Playwright Chromium.** The maintainer's machines don't have Playwright's Chromium and won't get it, so `*.browser.test.*` files fail to launch locally, including under `vp run check:changed`. That failure is expected: don't install browsers, and leave browser tests to CI. When a task needs a real browser, Helium (a Chromium browser) is installed.
+- **Changelog.** Record every user-visible fork change in `annex/CHANGELOG.md`, so it is clear what Annex adds on top of each upstream update.
+- **Releases.** `annex/release.sh` builds and signs the macOS app locally, because the signing certificate never leaves the Mac. Then the `annex-release` workflow adds the Windows, Linux CLI, and Android builds and publishes the release.
