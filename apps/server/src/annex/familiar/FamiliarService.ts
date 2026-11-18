@@ -712,7 +712,7 @@ const make = Effect.gen(function* () {
       ...(typeof inherited.binaryPath === "string" ? { binaryPath: inherited.binaryPath } : {}),
       ...(typeof inherited.homePath === "string" ? { homePath: inherited.homePath } : {}),
       autoCompactWindow: String(input.compactAfter),
-      idleCompaction: "never",
+      idleCompaction: "off",
     };
     yield* serverSettings
       .updateProviderInstance({
