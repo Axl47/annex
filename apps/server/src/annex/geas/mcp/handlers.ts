@@ -6,13 +6,13 @@ import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
 import * as McpToolAccess from "../../../mcp/McpToolAccess.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import { GeasService } from "../GeasService.ts";
-import { GeasToolkit } from "./tools.ts";
+import type { GeasToolkit } from "./tools.ts";
 
 const invalid = (error: { readonly message: string }) =>
   new OrchestratorMcpFailure({ code: "invalid_request", message: error.message });
 
 /** Optional so upstream's MCP tests, which build the server without geasa, need no changes. */
-const build = Effect.gen(function* () {
+export const buildGeasMcpHandlers = Effect.gen(function* () {
   const service = Option.getOrUndefined(yield* Effect.serviceOption(GeasService));
 
   const asGeasThread = Effect.fn("GeasMcp.asGeasThread")(function* <A, R>(
@@ -88,5 +88,3 @@ const build = Effect.gen(function* () {
     ),
   } satisfies McpToolAccess.Handlers<typeof GeasToolkit.tools>;
 });
-
-export const layer = McpToolAccess.toLayer(GeasToolkit, build);

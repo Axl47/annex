@@ -20,10 +20,10 @@ import { GeasService } from "./GeasService.ts";
 const unavailable = new GeasError({ message: "Geasa are not available on this server." });
 
 /**
- * Spread into ws.ts's handler map; each handler calls one service method. The service is
- * optional so upstream's ws tests, which build the socket without it, need no Annex changes.
+ * Each handler calls one service method. The service is optional so upstream's ws tests, which
+ * build the socket without it, need no Annex changes.
  */
-export const makeAnnexRpcHandlers = Effect.gen(function* () {
+export const makeGeasRpcHandlers = Effect.gen(function* () {
   const geas = Option.getOrUndefined(yield* Effect.serviceOption(GeasService));
   const call = <A>(run: (service: GeasService["Service"]) => Effect.Effect<A, GeasError>) =>
     geas === undefined ? Effect.fail(unavailable) : run(geas);
