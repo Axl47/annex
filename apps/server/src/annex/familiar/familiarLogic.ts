@@ -19,6 +19,8 @@ export interface FamiliarChannel {
 export interface ProviderThreadSession {
   readonly id: string;
   readonly nativeThreadRef: { readonly nativeId: string | null } | null;
+  readonly firstRunOrdinal: number | null;
+  readonly lastRunOrdinal: number | null;
 }
 
 const AUTONOMY_RULES: Record<FamiliarAutonomy, string> = {
@@ -52,7 +54,7 @@ function familiarPreamble(channel: FamiliarChannel): string {
 
 /**
  * What a channel's turn adds to its inline context: the whole preamble on a new provider session
- * (no native thread before the turn, or a different one after loading), one line when the Tome
+ * (no turn has run on it yet, or loading replaced its native thread), one line when the Tome
  * changed during a live session, otherwise nothing. `delivered` remembers revisions per session.
  */
 export function familiarTurnContext(input: {
@@ -65,7 +67,13 @@ export function familiarTurnContext(input: {
   const { channel, before, after, delivered } = input;
   if (channel === undefined || input.skip) return "";
   const previous = before.nativeThreadRef?.nativeId ?? null;
-  const newSession = previous === null || after.nativeThreadRef?.nativeId !== previous;
+  // Some providers (Claude) name the native session before its first turn, so a known id alone
+  // doesn't mean the session has seen the preamble; a first run (or its retry) hasn't.
+  const newSession =
+    previous === null ||
+    after.nativeThreadRef?.nativeId !== previous ||
+    before.firstRunOrdinal === null ||
+    before.firstRunOrdinal === after.lastRunOrdinal;
   const session = after.nativeThreadRef?.nativeId ?? after.id;
   const seen = delivered.get(session);
   delivered.set(session, channel.tomeRevision);
