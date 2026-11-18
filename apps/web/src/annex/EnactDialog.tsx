@@ -54,9 +54,19 @@ const lastEnactKey = (environmentId: EnvironmentId) => `annex:geas-last-enact:${
 
 export interface EnactSeed {
   readonly projectId: ProjectId;
-  /** Quoted context sent after the request, such as a passage from another geas's report. */
-  readonly context: string;
+  /** A quoted passage of the parent's report that the new geas is about. */
+  readonly quote: string;
+  readonly parent: {
+    readonly geasId: GeasId;
+    readonly key: string;
+    readonly title: string;
+    /** A done or canceled geas starts no run, so its agent would never read the request. */
+    readonly queueable: boolean;
+  };
 }
+
+const QUEUE_INSTRUCTIONS =
+  "File a new geas with geas_enact and start it. Write its request so a fresh agent can act on it alone, with what you know from this geas. It does not change your own task.";
 
 export function EnactDialog({
   environmentId,
@@ -79,6 +89,8 @@ export function EnactDialog({
   const providers =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
   const enact = useAtomCommand(grimoireAtoms.enact, { label: "enact geas" });
+  const comment = useAtomCommand(grimoireAtoms.comment, { label: "queue geas request" });
+  const canQueue = useAtomValue(grimoireAtoms.comment.permissionAtom(environmentId));
 
   const [last] = useState<LastEnact>(() =>
     readLocalStorageValue(lastEnactKey(environmentId), {}, LastEnact),
@@ -87,7 +99,7 @@ export function EnactDialog({
     seed?.projectId ?? last.projectId ?? projects[0]?.id ?? "",
   );
   const [request, setRequest] = useState("");
-  const [context, setContext] = useState(seed?.context ?? "");
+  const [quote, setQuote] = useState(seed?.quote ?? "");
   const [envMode, setEnvMode] = useState<EnvMode>(last.envMode ?? "worktree");
   const [baseRefs, setBaseRefs] = useState<Readonly<Record<string, string>>>(last.baseRefs ?? {});
   const [startFromOrigin, setStartFromOrigin] = useState(last.startFromOrigin ?? false);
@@ -120,7 +132,10 @@ export function EnactDialog({
       environmentId,
       input: {
         projectId: project.id,
-        request: context.trim() === "" ? request.trim() : `${request.trim()}\n\n${context.trim()}`,
+        request:
+          seed === undefined || quote === ""
+            ? request.trim()
+            : `${request.trim()}\n\nThis comes from geas ${seed.parent.key} (${seed.parent.title}).\n${quote}`,
         workspace,
         modelSelection,
         backlog,
@@ -135,6 +150,24 @@ export function EnactDialog({
       LastEnact,
     );
     onClose(result.value.geasId);
+  };
+
+  /** Hands the request to the parent's agent, which knows the context, after its current run. */
+  const queue = async () => {
+    if (seed === undefined || request.trim() === "" || saving) return;
+    setSaving(true);
+    const result = await comment({
+      environmentId,
+      input: {
+        geasId: seed.parent.geasId,
+        body: [QUEUE_INSTRUCTIONS, `What I want:\n${request.trim()}`, quote]
+          .filter((part) => part !== "")
+          .join("\n\n"),
+        queue: true,
+      },
+    });
+    setSaving(false);
+    if (result._tag === "Success") onClose();
   };
 
   return (
@@ -162,16 +195,18 @@ export function EnactDialog({
             <ComposerSurface.Shell contextRow>
               <ComposerSurface.Host>
                 <ComposerSurface.Main>
-                  {context !== "" ? (
+                  {seed !== undefined && quote !== "" ? (
                     <div className="mx-3 mt-3 flex items-start gap-2 rounded-lg bg-muted/50 px-2.5 py-2 text-xs text-muted-foreground">
                       <QuoteIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-                      <p className="line-clamp-4 min-w-0 flex-1 whitespace-pre-wrap">{context}</p>
+                      <p className="line-clamp-4 min-w-0 flex-1 whitespace-pre-wrap">
+                        {seed.parent.key}: {quote}
+                      </p>
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon-xs"
                         aria-label="Remove context"
-                        onClick={() => setContext("")}
+                        onClick={() => setQuote("")}
                       >
                         <XIcon />
                       </Button>
@@ -211,6 +246,17 @@ export function EnactDialog({
                       }
                     />
                     <div className="min-w-0 flex-1" />
+                    {seed?.parent.queueable === true ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={!canQueue || request.trim() === "" || saving}
+                        onClick={() => void queue()}
+                      >
+                        Queue to {seed.parent.key}
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       variant="ghost"

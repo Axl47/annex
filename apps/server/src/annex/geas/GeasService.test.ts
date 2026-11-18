@@ -180,14 +180,17 @@ describe("GeasService", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
-  it.effect("holds a comment the run can't take and starts a fresh run with it", () => {
+  it.effect.each([
+    { case: "a comment the run can't take", steerable: false, queue: false },
+    { case: "a queued comment", steerable: true, queue: true },
+  ])("holds $case and starts a fresh run with it", ({ steerable, queue }) => {
     const harness = makeHarness();
     return Effect.gen(function* () {
       const geas = yield* GeasService.GeasService;
       const { geasId } = yield* enact(geas);
       const threadId = harness.launches[0]!.threadId!;
-      harness.steerable.current = false;
-      yield* geas.comment({ geasId, body: "Also check mobile." });
+      harness.steerable.current = steerable;
+      yield* geas.comment({ geasId, body: "Also check mobile.", queue });
       assert.strictEqual(harness.sends.length, 0);
 
       yield* geas.handleEvent(runEnded(threadId, "run-1"));
