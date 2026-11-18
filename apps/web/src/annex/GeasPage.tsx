@@ -11,7 +11,7 @@ import type {
   GeasSuggestedAction,
   GitStackedAction,
 } from "@t3tools/contracts";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ArchiveIcon,
   ArchiveRestoreIcon,
@@ -19,7 +19,7 @@ import {
   RotateCcwIcon,
   SquareIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState, type RefObject } from "react";
 
 import BaseGitActionsControl from "../components/GitActionsControl";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../components/WorkspaceBreadcrumb";
@@ -33,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
+import { Input } from "../components/ui/input";
 import { SidebarInset } from "../components/ui/sidebar";
 import { Textarea } from "../components/ui/textarea";
 import { isElectron } from "../env";
@@ -45,8 +46,10 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { formatRelativeTimeLabel } from "../timestampFormat";
+import { EnactDialog, type EnactSeed } from "./EnactDialog";
 import { GeasRunDot, GeasStatusIcon } from "./geasPresentation";
 import { GeasReport } from "./GeasReport";
+import { GeasSelectionMenu, quoteSelection } from "./GeasSelectionMenu";
 import { GEAS_STATUS_LABELS, grimoireAtoms } from "./state";
 
 const STATUSES = Object.keys(GEAS_STATUS_LABELS) as ReadonlyArray<GeasStatus>;
@@ -207,8 +210,14 @@ function GeasBody({
 }) {
   const act = useAtomCommand(grimoireAtoms.act, { label: "geas action" });
   const canOperate = useAtomValue(grimoireAtoms.act.permissionAtom(environmentId));
+  const canEnact = useAtomValue(grimoireAtoms.enact.permissionAtom(environmentId));
+  const navigate = useNavigate();
   const send = (action: GeasActInput["action"]) =>
     act({ environmentId, input: { geasId: geas.id, action } });
+  const [reportElement, setReportElement] = useState<HTMLDivElement | null>(null);
+  const [draft, setDraft] = useState("");
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const [enactSeed, setEnactSeed] = useState<EnactSeed | null>(null);
   return (
     <div className="grid min-w-0 gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
       <div className="flex min-w-0 flex-col gap-6">
@@ -224,12 +233,32 @@ function GeasBody({
               <span>Waiting on you in the thread</span>
             ) : null}
           </div>
-          <h2 className="text-xl font-semibold text-balance">{geas.title}</h2>
+          <GeasTitle environmentId={environmentId} geas={geas} />
         </div>
-        <GeasReport
-          environmentId={environmentId}
-          report={geas.report}
-          running={geas.runState !== "idle"}
+        <div ref={setReportElement}>
+          <GeasReport
+            environmentId={environmentId}
+            report={geas.report}
+            running={geas.runState !== "idle"}
+          />
+        </div>
+        <GeasSelectionMenu
+          source={reportElement}
+          canComment={canOperate}
+          canEnact={canEnact}
+          onComment={(text) => {
+            setDraft(
+              (current) =>
+                `${current.trim() === "" ? "" : `${current.trimEnd()}\n\n`}${quoteSelection(text)}\n\n`,
+            );
+            composerRef.current?.focus();
+          }}
+          onEnact={(text) =>
+            setEnactSeed({
+              projectId: geas.projectId,
+              context: `This comes from geas ${geas.key} (${geas.title}), about this part of its report:\n${quoteSelection(text)}`,
+            })
+          }
         />
         {geas.status === "in_review" ? (
           <DeliveryBar
@@ -251,8 +280,73 @@ function GeasBody({
         geas={geas}
         canOperate={canOperate}
         onAction={(action) => void send(action)}
+        draft={draft}
+        onDraftChange={setDraft}
+        composerRef={composerRef}
       />
+      {enactSeed !== null ? (
+        <EnactDialog
+          environmentId={environmentId}
+          seed={enactSeed}
+          onClose={(geasId) => {
+            setEnactSeed(null);
+            if (geasId !== undefined) {
+              void navigate({
+                to: "/grimoire/$environmentId/$geasId",
+                params: { environmentId, geasId },
+              });
+            }
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+/** The title, renamed in place; a new title also renames the geas's thread. */
+function GeasTitle({
+  environmentId,
+  geas,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly geas: GeasDetail;
+}) {
+  const canOperate = useAtomValue(grimoireAtoms.update.permissionAtom(environmentId));
+  const update = useAtomCommand(grimoireAtoms.update, { label: "rename geas" });
+  const [editing, setEditing] = useState(false);
+  if (!editing) {
+    return (
+      <h2 className="text-xl font-semibold text-balance">
+        <button
+          type="button"
+          className="rounded-sm text-left hover:text-foreground/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none"
+          aria-label={`Rename ${geas.title}`}
+          disabled={!canOperate}
+          onClick={() => setEditing(true)}
+        >
+          {geas.title}
+        </button>
+      </h2>
+    );
+  }
+  const save = (value: string) => {
+    setEditing(false);
+    const title = value.trim().slice(0, 200);
+    if (title === "" || title === geas.title) return;
+    void update({ environmentId, input: { geasId: geas.id, title } });
+  };
+  return (
+    <Input
+      aria-label="Title"
+      defaultValue={geas.title}
+      maxLength={200}
+      autoFocus
+      onBlur={(event) => save(event.currentTarget.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") save(event.currentTarget.value);
+        if (event.key === "Escape") setEditing(false);
+      }}
+    />
   );
 }
 
@@ -315,11 +409,17 @@ function ActivityColumn({
   geas,
   canOperate,
   onAction,
+  draft,
+  onDraftChange,
+  composerRef,
 }: {
   readonly environmentId: EnvironmentId;
   readonly geas: GeasDetail;
   readonly canOperate: boolean;
   readonly onAction: (action: GeasActInput["action"]) => void;
+  readonly draft: string;
+  readonly onDraftChange: (draft: string) => void;
+  readonly composerRef: RefObject<HTMLTextAreaElement | null>;
 }) {
   const nowMinute = useNowMinute();
   const nowMs = Date.parse(`${nowMinute}:00.000Z`);
@@ -364,7 +464,14 @@ function ActivityColumn({
           ),
         )}
       </ol>
-      <GeasComposer environmentId={environmentId} geasId={geas.id} disabled={!canOperate} />
+      <GeasComposer
+        environmentId={environmentId}
+        geasId={geas.id}
+        disabled={!canOperate}
+        body={draft}
+        onBodyChange={onDraftChange}
+        textareaRef={composerRef}
+      />
     </aside>
   );
 }
@@ -491,13 +598,18 @@ function GeasComposer({
   environmentId,
   geasId,
   disabled,
+  body,
+  onBodyChange: setBody,
+  textareaRef,
 }: {
   readonly environmentId: EnvironmentId;
   readonly geasId: GeasId;
   readonly disabled: boolean;
+  readonly body: string;
+  readonly onBodyChange: (body: string) => void;
+  readonly textareaRef: RefObject<HTMLTextAreaElement | null>;
 }) {
   const comment = useAtomCommand(grimoireAtoms.comment, { label: "geas comment" });
-  const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
   const submit = async () => {
     const text = body.trim();
@@ -516,6 +628,7 @@ function GeasComposer({
       }}
     >
       <Textarea
+        ref={textareaRef}
         aria-label="Comment"
         placeholder="Reply, redirect, or say stop. A running agent reads it right away."
         className="max-h-48 min-h-16 overflow-y-auto"
