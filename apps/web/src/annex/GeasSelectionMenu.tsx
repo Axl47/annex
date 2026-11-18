@@ -10,13 +10,48 @@ import {
 } from "../lib/selectionActions";
 
 const QUOTE_MAX_LENGTH = 2000;
+const PASSAGE_MAX_LENGTH = 1200;
+const PASSAGE_BLOCKS = "p, li, td, th, figcaption, pre, blockquote, h3";
 
-export function quoteSelection(text: string): string {
-  const clipped = text.length > QUOTE_MAX_LENGTH ? `${text.slice(0, QUOTE_MAX_LENGTH)}…` : text;
-  return clipped
+/** Selected report text, with where it sits so an agent can find it. */
+export interface ReportSelection {
+  readonly text: string;
+  readonly section: string | null;
+  /** The whole block the selection sits in, when it is more than the selection. */
+  readonly passage: string | null;
+}
+
+const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text);
+const quote = (text: string) =>
+  text
     .split("\n")
     .map((line) => `> ${line}`)
     .join("\n");
+
+export function quoteReportSelection(selection: ReportSelection): string {
+  const where = selection.section === null ? "the report" : `the report's ${selection.section}`;
+  const lines = [`From ${where}, I'm quoting:`, quote(clip(selection.text, QUOTE_MAX_LENGTH))];
+  if (selection.passage !== null) {
+    lines.push("In this passage:", quote(clip(selection.passage, PASSAGE_MAX_LENGTH)));
+  }
+  return lines.join("\n");
+}
+
+function readSelection(range: Range, text: string): ReportSelection {
+  const start =
+    range.startContainer instanceof Element
+      ? range.startContainer
+      : range.startContainer.parentElement;
+  const block = start?.closest(PASSAGE_BLOCKS) ?? null;
+  const passage =
+    block !== null && block.contains(range.endContainer)
+      ? (block.textContent ?? "").replace(/\s+/g, " ").trim()
+      : "";
+  return {
+    text,
+    section: start?.closest<HTMLElement>("[data-report-section]")?.dataset.reportSection ?? null,
+    passage: passage.length > text.replace(/\s+/g, " ").length ? passage : null,
+  };
 }
 
 /** Comment on, or enact a new geas from, text selected in a report. */
@@ -30,11 +65,11 @@ export function GeasSelectionMenu({
   readonly source: HTMLElement | null;
   readonly canComment: boolean;
   readonly canEnact: boolean;
-  readonly onComment: (text: string) => void;
-  readonly onEnact: (text: string) => void;
+  readonly onComment: (selection: ReportSelection) => void;
+  readonly onEnact: (selection: ReportSelection) => void;
 }) {
   const [selection, setSelection] = useState<{
-    readonly text: string;
+    readonly report: ReportSelection;
     readonly position: SelectionActionPoint;
   } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -64,7 +99,7 @@ export function GeasSelectionMenu({
         if (text === "" || !source.contains(range.commonAncestorContainer)) return clear();
         const rects = range.getClientRects();
         setSelection({
-          text,
+          report: readSelection(range, text),
           position: resolveSelectionActionPosition({
             bounds: source.getBoundingClientRect(),
             selectionRect: rects.item(rects.length - 1) ?? range.getBoundingClientRect(),
@@ -91,8 +126,8 @@ export function GeasSelectionMenu({
   }, [source]);
 
   if (!selection) return null;
-  const run = (action: (text: string) => void) => {
-    action(selection.text);
+  const run = (action: (selection: ReportSelection) => void) => {
+    action(selection.report);
     actionsRef.current?.cancel();
     window.getSelection()?.removeAllRanges();
     setSelection(null);
