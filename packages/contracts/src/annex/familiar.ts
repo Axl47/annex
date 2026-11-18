@@ -109,6 +109,8 @@ export const FamiliarSummonInput = Schema.Struct({
   interactionMode: Schema.optional(ProviderInteractionMode),
   autonomy: Schema.optional(FamiliarAutonomy),
   dailyRunBudget: Schema.optional(Budget),
+  /** Sent as the channel's first message, from the user, so it doesn't count against the budget. */
+  firstMessage: Schema.optional(TrimmedNonEmptyString),
 });
 export type FamiliarSummonInput = typeof FamiliarSummonInput.Type;
 
@@ -142,6 +144,8 @@ export type FamiliarSetDismissedInput = typeof FamiliarSetDismissedInput.Type;
 
 export const FamiliarMutationResult = Schema.Struct({
   familiarId: FamiliarId,
+  /** The channel, on summon. */
+  threadId: Schema.optional(ThreadId),
   /** Routines the way back could not re-enable, such as one deleted meanwhile. */
   skippedRoutines: Schema.optional(Schema.Array(Schema.String)),
 });
