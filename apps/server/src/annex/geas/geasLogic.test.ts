@@ -1,10 +1,14 @@
 import {
   DEFAULT_GEAS_DELIVERY_ACTIONS,
   EMPTY_GEAS_REPORT,
+  EnvironmentId,
+  MessageId,
   ProjectId,
+  ThreadId,
   type GeasActivity,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
 
 import { deriveKeyPrefix, needsYou, renderRunMessage, verifyChecks } from "./geasLogic.ts";
 
@@ -140,6 +144,18 @@ describe("needsYou", () => {
 
 describe("renderRunMessage", () => {
   it("shows a later run what changed since the previous one, after the conversation so far", () => {
+    const cite = (text: string) =>
+      serializeAssistantCitation({
+        version: 1,
+        environmentId: EnvironmentId.make("env"),
+        threadId: ThreadId.make("thread"),
+        messageId: MessageId.make("geas-report:geas-1"),
+        text,
+        start: 0,
+        end: text.length,
+        prefix: "",
+        suffix: "",
+      });
     const message = renderRunMessage({
       key: "ANX-1",
       title: "Fix it",
@@ -155,19 +171,19 @@ describe("renderRunMessage", () => {
         rules: "Use pnpm.",
       },
       activity: [
-        activity({ kind: "comment", author: "user", body: "old note" }),
+        activity({ kind: "comment", author: "user", body: `${cite("old quote")}\n\nold note` }),
         activity({ eventType: "run_started" }),
-        activity({ kind: "comment", author: "user", body: "new note" }),
+        activity({ kind: "comment", author: "user", body: `${cite("new quote")}\n\nnew note` }),
         activity({ kind: "comment", author: "agent", body: "agent note" }),
         activity({ eventType: "status_changed", body: "Annex moved it to Done." }),
       ],
       previousFinalResponse: "Did half.",
     });
     expect(message).toContain(
-      "## Conversation so far\n- User (2026-11-17T10:00:00.000Z): old note\n- Agent (2026-11-17T10:00:00.000Z): agent note",
+      "## Conversation so far\n- User (2026-11-17T10:00:00.000Z): old quote\n\nold note\n- Agent (2026-11-17T10:00:00.000Z): agent note",
     );
     expect(message).toContain(
-      "## New since your last run\n- User: new note\n- Annex moved it to Done.",
+      `## New since your last run\n- User: ${cite("new quote")}\n\nnew note\n- Annex moved it to Done.`,
     );
     expect(message).toContain("## Your last response\nDid half.");
     expect(message).toContain("expectedRevision 3");
