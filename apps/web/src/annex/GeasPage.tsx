@@ -49,7 +49,7 @@ import { formatRelativeTimeLabel } from "../timestampFormat";
 import { EnactDialog, type EnactSeed } from "./EnactDialog";
 import { GeasRunDot, GeasStatusIcon } from "./geasPresentation";
 import { GeasReport } from "./GeasReport";
-import { GeasSelectionMenu, quoteSelection } from "./GeasSelectionMenu";
+import { GeasSelectionMenu, quoteReportSelection } from "./GeasSelectionMenu";
 import { GEAS_STATUS_LABELS, grimoireAtoms } from "./state";
 
 const STATUSES = Object.keys(GEAS_STATUS_LABELS) as ReadonlyArray<GeasStatus>;
@@ -246,17 +246,23 @@ function GeasBody({
           source={reportElement}
           canComment={canOperate}
           canEnact={canEnact}
-          onComment={(text) => {
+          onComment={(selection) => {
             setDraft(
               (current) =>
-                `${current.trim() === "" ? "" : `${current.trimEnd()}\n\n`}${quoteSelection(text)}\n\n`,
+                `${current.trim() === "" ? "" : `${current.trimEnd()}\n\n`}${quoteReportSelection(selection)}\n\n`,
             );
             composerRef.current?.focus();
           }}
-          onEnact={(text) =>
+          onEnact={(selection) =>
             setEnactSeed({
               projectId: geas.projectId,
-              context: `This comes from geas ${geas.key} (${geas.title}), about this part of its report:\n${quoteSelection(text)}`,
+              quote: quoteReportSelection(selection),
+              parent: {
+                geasId: geas.id,
+                key: geas.key,
+                title: geas.title,
+                queueable: geas.status !== "done" && geas.status !== "canceled",
+              },
             })
           }
         />
