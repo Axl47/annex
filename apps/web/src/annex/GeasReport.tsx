@@ -191,7 +191,7 @@ function CheckRow({ check }: { readonly check: GeasCheck }) {
 
 function Slot({ title, children }: { readonly title: string; readonly children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-2" data-report-section={title}>
+    <section className="flex flex-col gap-2">
       <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
       {children}
     </section>
@@ -223,12 +223,7 @@ export function GeasReport({
   return (
     <div className="flex flex-col gap-6">
       {report.result.trim() !== "" ? (
-        <p
-          className="text-base leading-relaxed font-medium text-pretty"
-          data-report-section="Result"
-        >
-          {report.result}
-        </p>
+        <p className="text-base leading-relaxed font-medium text-pretty">{report.result}</p>
       ) : null}
       {report.risks.length > 0 ? (
         <Slot title="Risks">
