@@ -1,7 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
 import { projectScriptCwd } from "@t3tools/shared/projectScripts";
 import type {
+  AssistantCitation,
   EnvironmentId,
   GeasActInput,
   GeasActivity,
@@ -49,7 +51,8 @@ import { formatRelativeTimeLabel } from "../timestampFormat";
 import { EnactDialog, type EnactSeed } from "./EnactDialog";
 import { GeasRunDot, GeasStatusIcon } from "./geasPresentation";
 import { GeasReport } from "./GeasReport";
-import { GeasSelectionMenu, quoteReportSelection } from "./GeasSelectionMenu";
+import { GeasCitationChip, GeasCitedText } from "./geasCitations";
+import { GeasSelectionMenu } from "./GeasSelectionMenu";
 import { GEAS_STATUS_LABELS, grimoireAtoms } from "./state";
 
 const STATUSES = Object.keys(GEAS_STATUS_LABELS) as ReadonlyArray<GeasStatus>;
@@ -216,6 +219,7 @@ function GeasBody({
     act({ environmentId, input: { geasId: geas.id, action } });
   const [reportElement, setReportElement] = useState<HTMLDivElement | null>(null);
   const [draft, setDraft] = useState("");
+  const [citations, setCitations] = useState<ReadonlyArray<AssistantCitation>>([]);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [enactSeed, setEnactSeed] = useState<EnactSeed | null>(null);
   return (
@@ -235,37 +239,47 @@ function GeasBody({
           </div>
           <GeasTitle environmentId={environmentId} geas={geas} />
         </div>
-        <div ref={setReportElement}>
+        <div ref={setReportElement} data-assistant-citation-source={`geas-report:${geas.id}`}>
           <GeasReport
             environmentId={environmentId}
             report={geas.report}
             running={geas.runState !== "idle"}
           />
         </div>
-        <GeasSelectionMenu
-          source={reportElement}
-          canComment={canOperate}
-          canEnact={canEnact}
-          onComment={(selection) => {
-            setDraft(
-              (current) =>
-                `${current.trim() === "" ? "" : `${current.trimEnd()}\n\n`}${quoteReportSelection(selection)}\n\n`,
-            );
-            composerRef.current?.focus();
-          }}
-          onEnact={(selection) =>
-            setEnactSeed({
-              projectId: geas.projectId,
-              quote: quoteReportSelection(selection),
-              parent: {
-                geasId: geas.id,
-                key: geas.key,
-                title: geas.title,
-                queueable: geas.status !== "done" && geas.status !== "canceled",
-              },
-            })
-          }
-        />
+        {geas.threadId !== null ? (
+          <GeasSelectionMenu
+            source={reportElement}
+            citationSource={{
+              environmentId,
+              threadId: geas.threadId,
+              messageId: `geas-report:${geas.id}`,
+            }}
+            canComment={canOperate}
+            canEnact={canEnact}
+            onComment={(citation) => {
+              setCitations((current) =>
+                current.some(
+                  (cited) => cited.start === citation.start && cited.end === citation.end,
+                )
+                  ? current
+                  : [...current, citation],
+              );
+              composerRef.current?.focus();
+            }}
+            onEnact={(citation) =>
+              setEnactSeed({
+                projectId: geas.projectId,
+                citation,
+                parent: {
+                  geasId: geas.id,
+                  key: geas.key,
+                  title: geas.title,
+                  queueable: geas.status !== "done" && geas.status !== "canceled",
+                },
+              })
+            }
+          />
+        ) : null}
         {geas.status === "in_review" ? (
           <DeliveryBar
             environmentId={environmentId}
@@ -278,7 +292,9 @@ function GeasBody({
           <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
             What was asked
           </summary>
-          <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{geas.request}</p>
+          <p className="mt-2 whitespace-pre-wrap text-muted-foreground">
+            <GeasCitedText text={geas.request} />
+          </p>
         </details>
       </div>
       <ActivityColumn
@@ -288,6 +304,8 @@ function GeasBody({
         onAction={(action) => void send(action)}
         draft={draft}
         onDraftChange={setDraft}
+        citations={citations}
+        onCitationsChange={setCitations}
         composerRef={composerRef}
       />
       {enactSeed !== null ? (
@@ -417,6 +435,8 @@ function ActivityColumn({
   onAction,
   draft,
   onDraftChange,
+  citations,
+  onCitationsChange,
   composerRef,
 }: {
   readonly environmentId: EnvironmentId;
@@ -425,6 +445,8 @@ function ActivityColumn({
   readonly onAction: (action: GeasActInput["action"]) => void;
   readonly draft: string;
   readonly onDraftChange: (draft: string) => void;
+  readonly citations: ReadonlyArray<AssistantCitation>;
+  readonly onCitationsChange: (citations: ReadonlyArray<AssistantCitation>) => void;
   readonly composerRef: RefObject<HTMLTextAreaElement | null>;
 }) {
   const nowMinute = useNowMinute();
@@ -457,7 +479,9 @@ function ActivityColumn({
                   {formatRelativeTimeLabel(entry.createdAt, nowMs)}
                 </span>
               </div>
-              <p className="whitespace-pre-wrap">{entry.body}</p>
+              <p className="whitespace-pre-wrap">
+                <GeasCitedText text={entry.body} />
+              </p>
               {entry.actions.length > 0 ? (
                 <SuggestedActions
                   actions={entry.actions}
@@ -476,6 +500,8 @@ function ActivityColumn({
         disabled={!canOperate}
         body={draft}
         onBodyChange={onDraftChange}
+        citations={citations}
+        onCitationsChange={onCitationsChange}
         textareaRef={composerRef}
       />
     </aside>
@@ -606,6 +632,8 @@ function GeasComposer({
   disabled,
   body,
   onBodyChange: setBody,
+  citations,
+  onCitationsChange,
   textareaRef,
 }: {
   readonly environmentId: EnvironmentId;
@@ -613,17 +641,24 @@ function GeasComposer({
   readonly disabled: boolean;
   readonly body: string;
   readonly onBodyChange: (body: string) => void;
+  readonly citations: ReadonlyArray<AssistantCitation>;
+  readonly onCitationsChange: (citations: ReadonlyArray<AssistantCitation>) => void;
   readonly textareaRef: RefObject<HTMLTextAreaElement | null>;
 }) {
   const comment = useAtomCommand(grimoireAtoms.comment, { label: "geas comment" });
   const [sending, setSending] = useState(false);
   const submit = async () => {
-    const text = body.trim();
+    const text = [...citations.map(serializeAssistantCitation), body.trim()]
+      .filter((part) => part !== "")
+      .join("\n\n");
     if (text === "" || sending || disabled) return;
     setSending(true);
     const result = await comment({ environmentId, input: { geasId, body: text } });
     setSending(false);
-    if (result._tag === "Success") setBody("");
+    if (result._tag === "Success") {
+      setBody("");
+      onCitationsChange([]);
+    }
   };
   return (
     <form
@@ -633,6 +668,17 @@ function GeasComposer({
         void submit();
       }}
     >
+      {citations.length > 0 ? (
+        <div className="flex flex-wrap gap-1">
+          {citations.map((citation, index) => (
+            <GeasCitationChip
+              key={serializeAssistantCitation(citation)}
+              citation={citation}
+              onRemove={() => onCitationsChange(citations.filter((_, at) => at !== index))}
+            />
+          ))}
+        </div>
+      ) : null}
       <Textarea
         ref={textareaRef}
         aria-label="Comment"
@@ -652,7 +698,7 @@ function GeasComposer({
         type="submit"
         size="sm"
         className="self-end"
-        disabled={disabled || sending || body.trim() === ""}
+        disabled={disabled || sending || (body.trim() === "" && citations.length === 0)}
       >
         Send
       </Button>
