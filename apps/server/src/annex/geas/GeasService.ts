@@ -742,6 +742,7 @@ const make = Effect.gen(function* () {
   const postUserComment = Effect.fn("GeasService.postUserComment")(function* (
     geasId: GeasId,
     body: string,
+    queue = false,
   ) {
     const row = yield* requireGeas(geasId);
     const run = yield* openRun(geasId);
@@ -753,6 +754,18 @@ const make = Effect.gen(function* () {
       runId: run?.run_id ?? null,
     });
     yield* orDie(sql`UPDATE annex_geas SET agent_runs_since_user = 0 WHERE geas_id = ${geasId}`);
+    if (queue && isRunActive(row)) {
+      yield* insertActivity({
+        geasId,
+        kind: "event",
+        eventType: "comment_queued",
+        author: "server",
+        body: "Queued: the next run starts with your comment.",
+        runId: run?.run_id ?? null,
+      });
+      yield* refresh(geasId);
+      return;
+    }
     if (row.thread_id !== null && isRunActive(row)) {
       const id = yield* newId("geas-steer");
       yield* threads
@@ -890,7 +903,9 @@ const make = Effect.gen(function* () {
 
   const comment: GeasService["Service"]["comment"] = Effect.fn("GeasService.comment")(
     function* (input) {
-      yield* withLock(input.geasId)(postUserComment(input.geasId, input.body));
+      yield* withLock(input.geasId)(
+        postUserComment(input.geasId, input.body, input.queue === true),
+      );
       return { geasId: input.geasId };
     },
   );
