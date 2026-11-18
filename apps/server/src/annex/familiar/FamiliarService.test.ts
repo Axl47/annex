@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  ClaudeSettings,
   GeasId,
   MessageId,
   ProjectId,
@@ -15,6 +16,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
@@ -30,10 +32,13 @@ import * as FamiliarService from "./FamiliarService.ts";
 import { familiarChannels } from "./familiarThreads.ts";
 
 const projectId = ProjectId.make("project-annex");
+const decodeClaudeConfig = Schema.decodeUnknownEffect(ClaudeSettings);
 const modelSelection = { instanceId: ProviderInstanceId.make("claude"), model: "claude-haiku-5-5" };
 
 const withHarness = <A, E>(
-  body: (harness: Harness) => Effect.Effect<A, E, FamiliarService.FamiliarService>,
+  body: (
+    harness: Harness,
+  ) => Effect.Effect<A, E, FamiliarService.FamiliarService | ServerSettings.ServerSettingsService>,
 ) =>
   Effect.gen(function* () {
     // Queues, not PubSubs: the service subscribes from a forked fiber, possibly after a test offers.
@@ -92,9 +97,9 @@ function makeHarness(
           subscribeList: () => Stream.never,
         }),
         Layer.mock(GeasService)({ streamWakes: Stream.fromQueue(wakes) }),
-        ServerSettings.layerTest({}),
       ),
     ),
+    Layer.provideMerge(ServerSettings.layerTest({})),
     Layer.provideMerge(sql),
     Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "annex-familiar-test-" })),
     Layer.provideMerge(NodeServices.layer),
@@ -163,6 +168,19 @@ describe("FamiliarService", () => {
             { type: "thread.auto-settle.set", enabled: false },
           ],
         );
+      }),
+    );
+  });
+
+  it.effect("sets up a Claude · Familiars instance the Claude driver accepts", () => {
+    return withHarness(() =>
+      Effect.gen(function* () {
+        const service = yield* FamiliarService.FamiliarService;
+        const { instanceId } = yield* service.configureInstance({ compactAfter: 400_000 });
+        const settings = yield* ServerSettings.ServerSettingsService;
+        const instance = (yield* settings.getSettings).providerInstances[instanceId];
+        const config = yield* decodeClaudeConfig(instance?.config);
+        assert.deepInclude(config, { autoCompactWindow: "400000", idleCompaction: "off" });
       }),
     );
   });
