@@ -213,7 +213,7 @@ export type GeasDeliveryAction = typeof GeasDeliveryAction.Type;
 
 export const DEFAULT_GEAS_DELIVERY_ACTIONS: ReadonlyArray<GeasDeliveryAction> = [
   { label: "Land it", prompt: "Land this." },
-  { label: "Open PR", prompt: "Run the project's checks, then open a pull request." },
+  { label: "Full Stop", prompt: "Use Full Stop." },
 ];
 
 export const GrimoireProjectSettings = Schema.Struct({
