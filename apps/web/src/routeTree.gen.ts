@@ -24,6 +24,7 @@ import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-reques
 import { Route as ChatNewRouteImport } from './routes/_chat.new'
 import { Route as ChatIssuesRouteImport } from './routes/_chat.issues'
 import { Route as ChatGrimoireIndexRouteImport } from './routes/_chat.grimoire.index'
+import { Route as ChatFamiliarsIndexRouteImport } from './routes/_chat.familiars.index'
 import { Route as ThreadsEnvironmentIdThreadIdRouteImport } from './routes/threads.$environmentId.$threadId'
 import { Route as ChatSettingsWorktreesRouteImport } from './routes/_chat.settings.worktrees'
 import { Route as ChatSettingsVoiceRouteImport } from './routes/_chat.settings.voice'
@@ -55,6 +56,7 @@ import { Route as ChatSettingsAboutRouteImport } from './routes/_chat.settings.a
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
 import { Route as ChatGrimoireEnvironmentIdGeasIdRouteImport } from './routes/_chat.grimoire.$environmentId.$geasId'
+import { Route as ChatFamiliarsEnvironmentIdFamiliarIdRouteImport } from './routes/_chat.familiars.$environmentId.$familiarId'
 
 const WelcomeRoute = WelcomeRouteImport.update({
   id: '/welcome',
@@ -128,6 +130,11 @@ const ChatIssuesRoute = ChatIssuesRouteImport.update({
 const ChatGrimoireIndexRoute = ChatGrimoireIndexRouteImport.update({
   id: '/grimoire/',
   path: '/grimoire/',
+  getParentRoute: () => ChatRoute,
+} as any)
+const ChatFamiliarsIndexRoute = ChatFamiliarsIndexRouteImport.update({
+  id: '/familiars/',
+  path: '/familiars/',
   getParentRoute: () => ChatRoute,
 } as any)
 const ThreadsEnvironmentIdThreadIdRoute =
@@ -292,6 +299,12 @@ const ChatGrimoireEnvironmentIdGeasIdRoute =
     path: '/grimoire/$environmentId/$geasId',
     getParentRoute: () => ChatRoute,
   } as any)
+const ChatFamiliarsEnvironmentIdFamiliarIdRoute =
+  ChatFamiliarsEnvironmentIdFamiliarIdRouteImport.update({
+    id: '/familiars/$environmentId/$familiarId',
+    path: '/familiars/$environmentId/$familiarId',
+    getParentRoute: () => ChatRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof ChatIndexRoute
@@ -337,7 +350,9 @@ export interface FileRoutesByFullPath {
   '/settings/voice': typeof ChatSettingsVoiceRoute
   '/settings/worktrees': typeof ChatSettingsWorktreesRoute
   '/threads/$environmentId/$threadId': typeof ThreadsEnvironmentIdThreadIdRoute
+  '/familiars/': typeof ChatFamiliarsIndexRoute
   '/grimoire/': typeof ChatGrimoireIndexRoute
+  '/familiars/$environmentId/$familiarId': typeof ChatFamiliarsEnvironmentIdFamiliarIdRoute
   '/grimoire/$environmentId/$geasId': typeof ChatGrimoireEnvironmentIdGeasIdRoute
 }
 export interface FileRoutesByTo {
@@ -384,7 +399,9 @@ export interface FileRoutesByTo {
   '/settings/voice': typeof ChatSettingsVoiceRoute
   '/settings/worktrees': typeof ChatSettingsWorktreesRoute
   '/threads/$environmentId/$threadId': typeof ThreadsEnvironmentIdThreadIdRoute
+  '/familiars': typeof ChatFamiliarsIndexRoute
   '/grimoire': typeof ChatGrimoireIndexRoute
+  '/familiars/$environmentId/$familiarId': typeof ChatFamiliarsEnvironmentIdFamiliarIdRoute
   '/grimoire/$environmentId/$geasId': typeof ChatGrimoireEnvironmentIdGeasIdRoute
 }
 export interface FileRoutesById {
@@ -433,7 +450,9 @@ export interface FileRoutesById {
   '/_chat/settings/voice': typeof ChatSettingsVoiceRoute
   '/_chat/settings/worktrees': typeof ChatSettingsWorktreesRoute
   '/threads/$environmentId/$threadId': typeof ThreadsEnvironmentIdThreadIdRoute
+  '/_chat/familiars/': typeof ChatFamiliarsIndexRoute
   '/_chat/grimoire/': typeof ChatGrimoireIndexRoute
+  '/_chat/familiars/$environmentId/$familiarId': typeof ChatFamiliarsEnvironmentIdFamiliarIdRoute
   '/_chat/grimoire/$environmentId/$geasId': typeof ChatGrimoireEnvironmentIdGeasIdRoute
 }
 export interface FileRouteTypes {
@@ -482,7 +501,9 @@ export interface FileRouteTypes {
     | '/settings/voice'
     | '/settings/worktrees'
     | '/threads/$environmentId/$threadId'
+    | '/familiars/'
     | '/grimoire/'
+    | '/familiars/$environmentId/$familiarId'
     | '/grimoire/$environmentId/$geasId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -529,7 +550,9 @@ export interface FileRouteTypes {
     | '/settings/voice'
     | '/settings/worktrees'
     | '/threads/$environmentId/$threadId'
+    | '/familiars'
     | '/grimoire'
+    | '/familiars/$environmentId/$familiarId'
     | '/grimoire/$environmentId/$geasId'
   id:
     | '__root__'
@@ -577,7 +600,9 @@ export interface FileRouteTypes {
     | '/_chat/settings/voice'
     | '/_chat/settings/worktrees'
     | '/threads/$environmentId/$threadId'
+    | '/_chat/familiars/'
     | '/_chat/grimoire/'
+    | '/_chat/familiars/$environmentId/$familiarId'
     | '/_chat/grimoire/$environmentId/$geasId'
   fileRoutesById: FileRoutesById
 }
@@ -698,6 +723,13 @@ declare module '@tanstack/react-router' {
       path: '/grimoire'
       fullPath: '/grimoire/'
       preLoaderRoute: typeof ChatGrimoireIndexRouteImport
+      parentRoute: typeof ChatRoute
+    }
+    '/_chat/familiars/': {
+      id: '/_chat/familiars/'
+      path: '/familiars'
+      fullPath: '/familiars/'
+      preLoaderRoute: typeof ChatFamiliarsIndexRouteImport
       parentRoute: typeof ChatRoute
     }
     '/threads/$environmentId/$threadId': {
@@ -917,6 +949,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatGrimoireEnvironmentIdGeasIdRouteImport
       parentRoute: typeof ChatRoute
     }
+    '/_chat/familiars/$environmentId/$familiarId': {
+      id: '/_chat/familiars/$environmentId/$familiarId'
+      path: '/familiars/$environmentId/$familiarId'
+      fullPath: '/familiars/$environmentId/$familiarId'
+      preLoaderRoute: typeof ChatFamiliarsEnvironmentIdFamiliarIdRouteImport
+      parentRoute: typeof ChatRoute
+    }
   }
 }
 
@@ -993,7 +1032,9 @@ interface ChatRouteChildren {
   ChatIndexRoute: typeof ChatIndexRoute
   ChatEnvironmentIdThreadIdRoute: typeof ChatEnvironmentIdThreadIdRoute
   ChatDraftDraftIdRoute: typeof ChatDraftDraftIdRoute
+  ChatFamiliarsIndexRoute: typeof ChatFamiliarsIndexRoute
   ChatGrimoireIndexRoute: typeof ChatGrimoireIndexRoute
+  ChatFamiliarsEnvironmentIdFamiliarIdRoute: typeof ChatFamiliarsEnvironmentIdFamiliarIdRoute
   ChatGrimoireEnvironmentIdGeasIdRoute: typeof ChatGrimoireEnvironmentIdGeasIdRoute
 }
 
@@ -1006,7 +1047,10 @@ const ChatRouteChildren: ChatRouteChildren = {
   ChatIndexRoute: ChatIndexRoute,
   ChatEnvironmentIdThreadIdRoute: ChatEnvironmentIdThreadIdRoute,
   ChatDraftDraftIdRoute: ChatDraftDraftIdRoute,
+  ChatFamiliarsIndexRoute: ChatFamiliarsIndexRoute,
   ChatGrimoireIndexRoute: ChatGrimoireIndexRoute,
+  ChatFamiliarsEnvironmentIdFamiliarIdRoute:
+    ChatFamiliarsEnvironmentIdFamiliarIdRoute,
   ChatGrimoireEnvironmentIdGeasIdRoute: ChatGrimoireEnvironmentIdGeasIdRoute,
 }
 
