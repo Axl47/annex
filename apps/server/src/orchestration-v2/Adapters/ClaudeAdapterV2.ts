@@ -212,6 +212,7 @@ import {
   claudeRateLimitEventToUpdate,
   type ClaudeScopedLimitNames,
 } from "../../provider/claudeUsageLimits.ts";
+import { wardAgentEnv } from "../../ward/Ward.ts";
 import type { ManagedServerProvider } from "@t3tools/provider-core/server/snapshot";
 import {
   T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH,
@@ -1530,6 +1531,7 @@ export const layerQueryRunner: Layer.Layer<
               }
             : {}),
           [PortScanner.AGENT_THREAD_ENV]: input.threadId,
+          ...wardAgentEnv("claude", sdkOptions.env ?? hostEnvironment),
         },
       };
       // The SDK can prepend a scope wrapper to native binaries; script entries run through node.
