@@ -86,6 +86,7 @@ import { expandHomeVariable } from "@t3tools/provider-core/server/pathExpansion"
 import * as ProcessRunner from "../processRunner.ts";
 import * as PortScanner from "../preview/PortScanner.ts";
 import * as NativeTelemetryClient from "../resourceTelemetry/NativeTelemetryClient.ts";
+import { wardTerminalLaunch } from "../ward/Ward.ts";
 import { terminalOutputStream } from "./OutputProtocol.ts";
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
 
@@ -2941,8 +2942,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
     const launch = yield* agentScope
       .wrap({
-        command: lookup.success,
-        args: candidate.args ?? [],
+        ...wardTerminalLaunch({ command: lookup.success, args: candidate.args ?? [] }, session.cwd),
         name: "terminal",
         env: spawnEnv,
         survivesRestart: true,
