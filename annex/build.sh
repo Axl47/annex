@@ -5,6 +5,7 @@
 #   annex/build.sh mac    <version>   signed macOS arm64 zip + nightly-mac.yml   -> release/
 #                                     (no DMG: it would hold the unsigned app; first install is the zip)
 #   annex/build.sh win    <version>   Windows x64 installer + nightly.yml       -> release/
+#   annex/build.sh linux  <version>   Linux x64 AppImage + nightly-linux.yml    -> release/
 #   annex/build.sh cli    <version>   t3 CLI archive for this Linux/x64 host    -> release-cli/
 #
 # Versions follow upstream's nightly shape, <next patch>-nightly.<UTC date>.<n>, so Annex stays on
@@ -23,7 +24,7 @@ next_version() {
   echo "$major.$minor.$((patch + 1))-nightly.$(date -u +%Y%m%d).$((1000000 + $(date -u +%s) % 86400))"
 }
 
-cmd=${1:?usage: annex/build.sh version|mac|win|cli [version]}
+cmd=${1:?usage: annex/build.sh version|mac|win|linux|cli [version]}
 if [ "$cmd" = version ]; then next_version; exit 0; fi
 version=${2:?missing version}
 
@@ -41,6 +42,9 @@ case "$cmd" in
     ;;
   win)
     node scripts/build-desktop-artifact.ts --platform win --target nsis --arch x64 --build-version "$version"
+    ;;
+  linux)
+    node scripts/build-desktop-artifact.ts --platform linux --target AppImage --arch x64 --build-version "$version"
     ;;
   cli)
     cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml
