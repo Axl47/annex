@@ -45,9 +45,9 @@ A_PATH='M0 57L21 0H39L60 57H45.5L41.6 45H18.4L14.5 57H0ZM22.2 33.5H37.8L30 9.5L2
 for f in apps/web/src/components/T3Wordmark.tsx apps/mobile/src/components/T3Wordmark.tsx; do
   A_PATH="$A_PATH" perl -0pi -e 's/viewBox="15\.5309 37 94\.3941 56\.96"/viewBox="0 0 60 57"/; s/d="M33\.4509[^"]*"/d="$ENV{A_PATH}"/; s/94\.3941 \/ 56\.96/60 \/ 57/; s/accessibilityLabel="T3"/accessibilityLabel="Annex"/' "$f"
 done
-sub 's/<T3Wordmark aria-label="T3"/<T3Wordmark aria-label="Annex"/; s/items-baseline gap-1 text-sm/items-baseline gap-px text-sm/; s/>\n(\s*)Code\n(\s*)<\/span>/>\n$1nnex\n$2<\/span>/' \
+sub 's/<T3Wordmark aria-label="T3"/<T3Wordmark aria-label="Annex"/; s/items-baseline gap-1 text-sm/items-baseline gap-px text-sm/; s/\{"Code"\}/{"nnex"}/' \
   apps/web/src/components/sidebar/SidebarChrome.tsx
-sub 's/"T3 Code, Threads"/"Annex, Threads"/; s/className="flex-row items-center gap-1\.5"/className="flex-row items-center gap-px"/; s/\{ gap: 5\.25 \* scale \}/{ gap: 1 * scale }/; s/>\n(\s*)Code\n(\s*)<\/Text>/>\n$1nnex\n$2<\/Text>/' \
+sub 's/"T3 Code, Threads"/"Annex, Threads"/; s/className="flex-row items-center gap-1\.5"/className="flex-row items-center gap-px"/; s/\{ gap: 5\.25 \* scale \}/{ gap: 1 * scale }/; s/const WORDMARK_SUFFIX = "Code";/const WORDMARK_SUFFIX = "nnex";/' \
   apps/mobile/src/components/CompactBrandTitle.tsx
 
 # Servers update from Annex's releases: `t3 update`, remote updates, and the install scripts.
@@ -108,8 +108,8 @@ expect apps/desktop/resources/installer.nsh '!macro preInit'
 expect apps/mobile/app.config.ts 'androidAdaptiveBackgroundColor: "#0b1222",'
 expect apps/web/src/components/T3Wordmark.tsx 'viewBox="0 0 60 57"'
 expect apps/mobile/src/components/T3Wordmark.tsx 'viewBox="0 0 60 57"'
-expect apps/web/src/components/sidebar/SidebarChrome.tsx 'nnex'
-expect apps/mobile/src/components/CompactBrandTitle.tsx 'nnex'
+expect apps/web/src/components/sidebar/SidebarChrome.tsx '{"nnex"}'
+expect apps/mobile/src/components/CompactBrandTitle.tsx 'const WORDMARK_SUFFIX = "nnex";'
 expect packages/shared/src/cliRelease.ts 'const CLI_RELEASE_REPOSITORY = "Axl47/annex";'
 expect apps/mobile/src/features/settings/environment-maintenance.test.ts '"https://github.com/Axl47/annex/releases.atom"'
 expect scripts/install.sh 'repo="Axl47/annex"'
