@@ -50,7 +50,7 @@ jobs:
           if-no-files-found: error
 
   linux-desktop:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # glibc 2.39, the Linux build ceiling; ubuntu-latest is 26.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -70,7 +70,7 @@ jobs:
           if-no-files-found: error
 
   linux-cli:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # glibc 2.39, the Linux build ceiling; ubuntu-latest is 26.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
