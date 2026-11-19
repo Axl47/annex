@@ -11,7 +11,8 @@ sub() { perl -0pi -e "$1" "${@:2}"; }
 sub 's/"productName": "T3 Code \(Beta\)"/"productName": "Annex"/' apps/desktop/package.json
 sub 's/const DESKTOP_APP_ID = "com\.t3tools\.t3code";/const DESKTOP_APP_ID = "dev.axl47.annex";/;
      s/\? "T3 Code \(Nightly\)"/? "Annex (Nightly)"/;
-     s/"T3-Code-\$\{version\}-\$\{arch\}\.\$\{ext\}"/"Annex-\${version}-\${arch}.\${ext}"/' scripts/build-desktop-artifact.ts
+     s/"T3-Code-\$\{version\}-\$\{arch\}\.\$\{ext\}"/"Annex-\${version}-\${arch}.\${ext}"/;
+     s/"T3-Code-(Nightly-)?\$\{arch\}\.\$\{ext\}"/"Annex-$1\${arch}.\${ext}"/g' scripts/build-desktop-artifact.ts
 sub 's/const APP_BASE_NAME = "T3 Code";/const APP_BASE_NAME = "Annex";/;
      s/"com\.t3tools\.t3code\.dev" : "com\.t3tools\.t3code"/"dev.axl47.annex.dev" : "dev.axl47.annex"/' apps/desktop/src/app/DesktopEnvironment.ts
 # Desktop: Electron profile folder. The t3code:// scheme stays so T3 Connect sign-in callbacks still
@@ -97,6 +98,7 @@ sub 's/Name=T3 Code \((Beta|Nightly|Dev)\)/Name=Annex ($1)/g' apps/desktop/src/a
 expect() { grep -qF -- "$2" "$1" || { echo "rebrand: '$2' missing from $1; update annex/rebrand.sh" >&2; exit 1; }; }
 expect apps/desktop/package.json '"productName": "Annex"'
 expect scripts/build-desktop-artifact.ts 'const DESKTOP_APP_ID = "dev.axl47.annex";'
+expect scripts/build-desktop-artifact.ts '"Annex-Nightly-${arch}.${ext}"'
 expect apps/desktop/src/app/DesktopEnvironment.ts 'const APP_BASE_NAME = "Annex";'
 expect apps/desktop/src/app/DesktopEnvironment.ts '"dev.axl47.annex.dev" : "dev.axl47.annex"'
 expect apps/desktop/src/app/DesktopUserData.ts 'current: "annex",'
