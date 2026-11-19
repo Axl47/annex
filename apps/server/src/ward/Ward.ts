@@ -44,7 +44,7 @@ export const wardCommandsFrom = (
 function executable(path: string): boolean {
   try {
     NodeFS.accessSync(path, NodeFS.constants.X_OK);
-    return true;
+    return NodeFS.statSync(path).isFile(); // X_OK alone also passes directories
   } catch {
     return false;
   }
