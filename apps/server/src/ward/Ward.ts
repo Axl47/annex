@@ -100,23 +100,23 @@ export const overlayWardServers = (
   wards: ReadonlyArray<WardInfo>,
 ): ReadonlyArray<DiscoveredLocalServer> => {
   if (wards.length === 0) return servers;
-  const wardHostPorts = new Set(wards.flatMap((ward) => ward.ports.map((port) => port.host)));
-  const wardServers = wards.flatMap((ward) =>
-    ward.ports
-      .filter((port) => port.listening)
-      .map((port): DiscoveredLocalServer => {
-        const threadId = ward.threadIds[0];
-        return {
-          host: "127.0.0.1",
-          port: port.host,
-          url: `http://127.0.0.1:${port.host}/`,
-          processName: `ward :${port.ward}`,
-          // The Ward daemon owns the socket; stopping it would stop every ward's ports.
-          pid: null,
-          terminal: null,
-          agent: threadId === undefined ? null : { threadId: ThreadId.make(threadId) },
-        };
-      }),
+  const listening = wards.flatMap((ward) =>
+    ward.ports.filter((port) => port.listening).map((port) => ({ ward, port })),
   );
+  // Ward only holds a host socket while its ward port listens; otherwise a host server may own it.
+  const wardHostPorts = new Set(listening.map(({ port }) => port.host));
+  const wardServers = listening.map(({ ward, port }): DiscoveredLocalServer => {
+    const threadId = ward.threadIds[0];
+    return {
+      host: "127.0.0.1",
+      port: port.host,
+      url: `http://127.0.0.1:${port.host}/`,
+      processName: `ward :${port.ward}`,
+      // The Ward daemon owns the socket; stopping it would stop every ward's ports.
+      pid: null,
+      terminal: null,
+      agent: threadId === undefined ? null : { threadId: ThreadId.make(threadId) },
+    };
+  });
   return [...servers.filter((server) => !wardHostPorts.has(server.port)), ...wardServers];
 };
