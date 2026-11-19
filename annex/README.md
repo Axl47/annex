@@ -16,6 +16,7 @@ Builds are on [Releases](https://github.com/Axl47/annex/releases).
 
 - **macOS (Apple silicon):** unzip `Annex-<version>-arm64.zip` into Applications. The app is self-signed, not notarized, so the first launch needs `xattr -dr com.apple.quarantine /Applications/Annex.app`. It updates itself after that.
 - **Windows:** run `Annex-<version>-x64.exe`.
+- **Linux (x64):** `curl -fsSL https://raw.githubusercontent.com/Axl47/annex/main/annex/install-linux.sh | bash` installs the AppImage with a launcher entry. It needs `fuse3`, and updates itself after that.
 - **Android:** install `Annex-<version>.apk`. It installs alongside the official app.
 - **Server (`t3` command):** `curl -fsSL https://raw.githubusercontent.com/Axl47/annex/main/scripts/install.sh | sh`
 
