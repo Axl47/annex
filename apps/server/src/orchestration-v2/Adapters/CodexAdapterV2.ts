@@ -141,6 +141,7 @@ import {
   MCP_APP_RESOURCE_SCHEME,
 } from "@t3tools/shared/mcpApp";
 import { snapshotMcpApp } from "../../mcpApps/McpAppSnapshot.ts";
+import { wardAgentEnv } from "../../ward/Ward.ts";
 import {
   ProviderAdapterDriverCreateError,
   type ProviderAdapterDriverCreateInput,
@@ -1873,6 +1874,7 @@ export const layerAppServerClientFactory: Layer.Layer<
           ...codexAppServerEnvironment(input.environment),
           ...(input.settings.homePath ? { CODEX_HOME: input.settings.homePath } : {}),
         };
+        Object.assign(environment, wardAgentEnv("codex", environment));
         const command = yield* makeCodexAppServerSpawnCommand({
           command: input.settings.binaryPath || "codex",
           args: codexAppServerArgs(

@@ -27,6 +27,7 @@ import { FetchHttpClient, HttpClient } from "effect/http";
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as WindowsTcpListeners from "../process/windowsTcpListeners.ts";
 import * as ProcessRunner from "../processRunner.ts";
+import * as Ward from "../ward/Ward.ts";
 
 export class PortDiscovery extends Context.Service<
   PortDiscovery,
@@ -960,8 +961,17 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
     return yield* probeWebServers(withoutLsof ?? [], configuredUrls);
   });
 
+  const applyWards = (snapshot: WebProbeSnapshot) =>
+    Ward.listWards.pipe(
+      Effect.map((wards) => ({
+        ...snapshot,
+        discovered: Ward.overlayWardServers(snapshot.discovered, wards),
+      })),
+      Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
+    );
+
   const scanSnapshot = (configuredUrls: ReadonlyArray<string>) =>
-    scanSemaphore.withPermits(1)(scanUnlocked(configuredUrls));
+    scanSemaphore.withPermits(1)(scanUnlocked(configuredUrls)).pipe(Effect.flatMap(applyWards));
 
   const scanOnce: PortDiscovery["Service"]["scan"] = (configuredUrls = []) => {
     const normalized = normalizeConfiguredUrls(configuredUrls);
