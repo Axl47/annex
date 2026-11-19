@@ -9,11 +9,13 @@ import {
   wardTerminalLaunch,
 } from "./Ward.ts";
 
-const ward = wardCommandsFrom({ T3CODE_WARD_COMMAND: "/opt/ward/bin/ward" });
+const ward = wardCommandsFrom({ T3CODE_WARD_COMMAND: "/opt/ward/bin/ward" }, () => true);
 
 describe("Ward hooks", () => {
-  it("is off without T3CODE_WARD_COMMAND", () => {
+  it("is off without T3CODE_WARD_COMMAND, or when it isn't an absolute path to Ward", () => {
     expect(wardCommandsFrom({})).toBeNull();
+    expect(wardCommandsFrom({ T3CODE_WARD_COMMAND: "ward" }, () => true)).toBeNull();
+    expect(wardCommandsFrom({ T3CODE_WARD_COMMAND: "/missing/ward" }, () => false)).toBeNull();
     expect(wardAgentEnv("claude", {}, null)).toEqual({});
     const launch = { command: "/bin/bash", args: ["-l"] };
     expect(wardTerminalLaunch(launch, "/w", null)).toBe(launch);
