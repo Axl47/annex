@@ -64,10 +64,11 @@ describe("overlayWardServers", () => {
     },
   ];
 
-  it("replaces the daemon's sockets with attributed ward servers and drops idle mappings", () => {
+  it("replaces the daemon's sockets with attributed ward servers", () => {
     const result = overlayWardServers([server(3000), server(20100), server(20101)], wards);
     expect(result).toEqual([
       server(3000),
+      server(20101), // an idle mapping's host port is free for host servers
       {
         host: "127.0.0.1",
         port: 20100,
