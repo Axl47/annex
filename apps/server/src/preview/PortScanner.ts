@@ -1021,7 +1021,9 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
     );
 
   const scanSnapshot = (configuredUrls: ReadonlyArray<string>) =>
-    scanSemaphore.withPermits(1)(scanUnlocked(configuredUrls)).pipe(Effect.flatMap(applyWards));
+    scanSemaphore
+      .withPermits(1)(scanUnlocked(configuredUrls))
+      .pipe(Effect.flatMap(listenerDiscovery ? applyWards : Effect.succeed));
 
   const scanOnce: PortDiscovery["Service"]["scan"] = (configuredUrls = []) => {
     const normalized = normalizeConfiguredUrls(configuredUrls);
