@@ -3,6 +3,8 @@
  * Enabled by `T3CODE_WARD_COMMAND` (the `ward` executable, with `ward-prefix` and
  * `ward-bash-env` beside it); a no-op when unset or for folders Ward does not manage.
  */
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- the Ward check runs once at module load, before any Effect runtime.
+import * as NodeFS from "node:fs";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -18,10 +20,35 @@ export interface WardCommands {
   readonly bashEnv: string;
 }
 
-export const wardCommandsFrom = (env: NodeJS.ProcessEnv): WardCommands | null => {
+/**
+ * Ward's commands from T3CODE_WARD_COMMAND, or null when unset or unusable: a
+ * wrong path would otherwise break every Claude command and terminal.
+ */
+export const wardCommandsFrom = (
+  env: NodeJS.ProcessEnv,
+  isExecutable: (path: string) => boolean = executable,
+): WardCommands | null => {
   const ward = env.T3CODE_WARD_COMMAND?.trim();
-  return ward ? { ward, prefix: `${ward}-prefix`, bashEnv: `${ward}-bash-env` } : null;
+  if (!ward) return null;
+  const commands = { ward, prefix: `${ward}-prefix`, bashEnv: `${ward}-bash-env` };
+  if (!ward.startsWith("/") || !Object.values(commands).every(isExecutable)) {
+    // @effect-diagnostics-next-line globalConsole:off -- one warning at module load, before any Effect runtime.
+    console.warn(
+      `T3CODE_WARD_COMMAND=${ward} is not an absolute path to ward, ward-prefix and ward-bash-env; Ward is off`,
+    );
+    return null;
+  }
+  return commands;
 };
+
+function executable(path: string): boolean {
+  try {
+    NodeFS.accessSync(path, NodeFS.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const commands = wardCommandsFrom(process.env);
 
