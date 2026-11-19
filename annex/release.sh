@@ -3,7 +3,7 @@
 #
 # Builds and signs the macOS app here (the signing certificate never leaves this Mac), drafts the
 # GitHub release with it, then starts the annex-release workflow, which adds the Windows installer,
-# the Linux t3 CLI archive, and the Android APK, and publishes the release.
+# the Linux AppImage and t3 CLI archive, and the Android APK, and publishes the release.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -42,4 +42,4 @@ gh release create "v$version" --repo "$REPO" --draft --prerelease --target "$sha
   --notes-file "$notes" \
   "release/Annex-$version-arm64.zip" release/nightly-mac.yml
 gh workflow run annex-release.yml --repo "$REPO" --ref main -f version="$version" -f ref="$sha"
-echo "drafted v$version; annex-release adds Windows, Linux CLI and Android, then publishes it"
+echo "drafted v$version; annex-release adds Windows, Linux and Android, then publishes it"
