@@ -72,6 +72,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import { isLocalSshDeviceHost, remoteSshDeviceHosts } from "./localSshDeviceHost.ts";
 
 import { readDeviceDetail, runDeviceAction } from "./DeviceActions.ts";
+import { annexDeviceListing } from "../annex/device/wardDevice.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
 import * as SecretResolverLayer from "../secrets/SecretResolver.ts";
@@ -562,7 +563,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
 
   const fetchDevices = Effect.fn("DeviceService.fetchDevices")(function* (ready: DeviceReadiness) {
     const { devices, detail, androidDiscoveryIncomplete, incompletePlatforms } =
-      yield* ready.devices.list;
+      yield* annexDeviceListing(ready.hostId, ready.devices.list);
     return {
       devices: devices.map((device): DeviceSummary => ({ ...device, hostId: ready.hostId })),
       detail,
