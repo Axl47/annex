@@ -12,7 +12,9 @@ git fetch -q origin main
 sha=$(git rev-parse origin/main)
 
 # Builds rewrite package versions, so they run in a throwaway worktree, never the main checkout.
-wt="$(git rev-parse --git-common-dir)/annex-release"
+# It sits beside the checkout, not inside .git: there the web build's memory grows until macOS
+# runs out of swap and kills it (exit 137).
+wt="$(dirname "$(git rev-parse --show-toplevel)")/annex-release"
 git worktree remove --force "$wt" 2>/dev/null || true
 git worktree add -q --detach "$wt" "$sha"
 trap 'git worktree remove --force "$wt"' EXIT
