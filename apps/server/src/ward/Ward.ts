@@ -55,6 +55,15 @@ const commands = wardCommandsFrom(process.env);
 /** The `ward` executable, or null when Ward is off. */
 export const wardCommand = commands?.ward ?? null;
 
+export const wardCommands = commands;
+
+type AgentHooks = Pick<WardCommands, "prefix" | "bashEnv">;
+let agentHooks: AgentHooks | undefined;
+/** Puts hooks that chain to Ward's own in front of them, for every agent started from now on. */
+export const setWardAgentHooks = (hooks: AgentHooks) => {
+  agentHooks = hooks;
+};
+
 /** Env an agent process needs so its commands run in their worktree's ward. */
 export const wardAgentEnv = (
   provider: "claude" | "codex",
@@ -62,8 +71,11 @@ export const wardAgentEnv = (
   ward: WardCommands | null = commands,
 ): Record<string, string> => {
   if (ward === null) return {};
+  const hooks = ward === commands ? (agentHooks ?? ward) : ward;
   const [key, value] =
-    provider === "claude" ? ["CLAUDE_CODE_SHELL_PREFIX", ward.prefix] : ["BASH_ENV", ward.bashEnv];
+    provider === "claude"
+      ? ["CLAUDE_CODE_SHELL_PREFIX", hooks.prefix]
+      : ["BASH_ENV", hooks.bashEnv];
   return env[key] === undefined ? { [key]: value } : {};
 };
 
