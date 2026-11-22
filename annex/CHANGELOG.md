@@ -23,6 +23,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ann
 - With Ward installed and `T3CODE_WARD_COMMAND` set on the server, each worktree's agent commands (Claude, and Codex in full access) and terminals run in that worktree's own network namespace, so parallel threads can use the same ports, databases and Docker setups without colliding. The preview list shows each ward's servers under their thread at the host port Ward maps them to. Linux only.
 - A simulator, emulator or phone is open in one thread at a time. Opening one that another thread has open is refused, from an agent's `device_open` and from the Device panel, with that thread's title and the devices that are free. A thread keeps its devices while it works and for 30 minutes after, and gives them up at once when it is settled, archived or deleted. A thread and its subagents share their devices.
 - `device_list` shows agents which devices other threads hold, and `device_open` with no device named picks a free emulator or simulator, not a held one or a phone.
+- With a Ward version that gives each ward its own Android emulator, a thread in a ward uses that emulator: an agent's `device_open` with no device named boots and opens it, and it appears in the Device panel and `device_list` named after its ward. Threads outside the ward's worktree can't open it, and Ward doesn't stop it as idle while a thread is still using it. Without Ward, or with an older one, nothing changes.
 
 ### Changed
 
