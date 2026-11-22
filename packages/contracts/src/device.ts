@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 
+import { DeviceRefusedError, DeviceToolListAnnexFields } from "./annex/device.ts";
 import { ThreadId, TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
 import { SettingsSecretValue } from "./settingsSecretValue.ts";
 
@@ -624,6 +625,7 @@ export class DeviceActionUnavailableError extends Schema.TaggedError<DeviceActio
 }
 
 export const DeviceError = Schema.Union([
+  DeviceRefusedError,
   DeviceHostUnavailableError,
   DevicePlatformUnavailableError,
   DeviceNotFoundError,
@@ -638,6 +640,7 @@ export const DeviceToolListResult = Schema.Struct({
   hosts: Schema.Array(DeviceHostSummary),
   devices: Schema.Array(DeviceSummary),
   open: Schema.Array(Schema.Struct({ hostId: DeviceHostId, deviceId: DeviceId })),
+  ...DeviceToolListAnnexFields,
 });
 export type DeviceToolListResult = typeof DeviceToolListResult.Type;
 
@@ -718,6 +721,7 @@ export class DeviceToolUnavailableError extends Schema.TaggedError<DeviceToolUna
 }
 
 export const DeviceToolError = Schema.Union([
+  DeviceRefusedError,
   DeviceToolUnavailableError,
   DeviceHostUnavailableError,
   DevicePlatformUnavailableError,

@@ -131,6 +131,7 @@ import * as ThreadLaunchService from "./orchestration-v2/ThreadLaunchService.ts"
 import * as ThreadMessageIntake from "./orchestration-v2/ThreadMessageIntake.ts";
 import * as DocumentText from "./provider/DocumentText.ts";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
+import { openLeasedDevice } from "./annex/device/deviceLease.ts";
 import { makeAnnexRpcHandlers } from "./annex/rpcHandlers.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
 import * as GuestShareService from "./guest/GuestShareService.ts";
@@ -3403,7 +3404,9 @@ export const layerWsRpc = (
               ),
         [WS_METHODS.deviceOpen]: (input) =>
           threadWorkspaceRoot(input.threadId).pipe(
-            Effect.flatMap((workspaceRoot) => deviceService.open(input, { workspaceRoot })),
+            Effect.flatMap((workspaceRoot) =>
+              openLeasedDevice(deviceService, input, { workspaceRoot }),
+            ),
           ),
         [WS_METHODS.deviceClose]: (input) => deviceService.close(input),
         [WS_METHODS.deviceShutdown]: (input) => deviceService.shutdown(input),

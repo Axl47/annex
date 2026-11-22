@@ -11,6 +11,11 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import {
+  deviceListExtras,
+  openLeasedDevice,
+  routeDeviceOpen,
+} from "../../../annex/device/deviceLease.ts";
 import * as DeviceService from "../../../device/DeviceService.ts";
 import { threadWorkspaceRoot } from "../../../project/threadWorkspaceRoot.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -238,6 +243,7 @@ const handlers = {
           ? state.devices.filter((device) => device.hostId === hostId)
           : state.devices,
         open,
+        ...(yield* deviceListExtras(state, scope.thread.threadId, hostId)),
       };
     }).pipe(Effect.mapError(toolError)),
   ),
@@ -253,7 +259,8 @@ const handlers = {
         });
       }
       const hostId = yield* resolveHostId(state.hosts, input.hostId);
-      const target = yield* pickDevice(state, { ...input, hostId });
+      const routed = yield* routeDeviceOpen(state, { ...input, hostId }, scope.thread.threadId);
+      const target = yield* pickDevice(routed.state, routed.input);
       // Resolve consent and agent connectivity before booting or registering a session.
       if (!(yield* devices.agentReadinessIfSupported(target.hostId))) {
         return yield* new DeviceToolUnavailableError({
@@ -261,7 +268,8 @@ const handlers = {
             "Agent device access requires enabled device support, agent access, and an available simulator platform on this host.",
         });
       }
-      const session = yield* devices.open(
+      const session = yield* openLeasedDevice(
+        devices,
         {
           threadId: scope.thread.threadId,
           hostId: target.hostId,
