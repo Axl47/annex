@@ -137,6 +137,7 @@ import * as DocumentText from "./provider/DocumentText.ts";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as Workflows from "./workflows/Workflows.ts";
 import * as WorkflowRuntime from "./workflows/WorkflowRuntime.ts";
+import { openLeasedDevice } from "./annex/device/deviceLease.ts";
 import { makeAnnexRpcHandlers } from "./annex/rpcHandlers.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
 import * as FeedbackStore from "./feedback/FeedbackStore.ts";
@@ -3528,7 +3529,9 @@ export const layerWsRpc = (
               ),
         [WS_METHODS.deviceOpen]: (input) =>
           threadWorkspaceRoot(input.threadId).pipe(
-            Effect.flatMap((workspaceRoot) => deviceService.open(input, { workspaceRoot })),
+            Effect.flatMap((workspaceRoot) =>
+              openLeasedDevice(deviceService, input, { workspaceRoot }),
+            ),
           ),
         [WS_METHODS.deviceClose]: (input) => deviceService.close(input),
         [WS_METHODS.deviceShutdown]: (input) => deviceService.shutdown(input),
