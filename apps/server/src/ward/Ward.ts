@@ -52,6 +52,9 @@ function executable(path: string): boolean {
 
 const commands = wardCommandsFrom(process.env);
 
+/** The `ward` executable, or null when Ward is off. */
+export const wardCommand = commands?.ward ?? null;
+
 /** Env an agent process needs so its commands run in their worktree's ward. */
 export const wardAgentEnv = (
   provider: "claude" | "codex",
