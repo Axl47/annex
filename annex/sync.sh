@@ -94,9 +94,12 @@ failing_tests() {
 # Typecheck everything; test the packages Annex's commits touch (upstream's CI covers the rest).
 # Tests that already fail on upstream main are not Annex's to fix, so only new failures count:
 # files that fail here are re-run on a clean upstream checkout, which most nights is never needed.
+# Compare against the upstream commit annex-sync sits on: --resume refetches, so upstream/main may
+# have moved past it.
+upstream=$(git merge-base HEAD upstream/main)
 failed=false
 pnpm exec vp run typecheck >/dev/null || { echo "typecheck failed" >&2; failed=true; }
-touched=$(git diff --name-only upstream/main HEAD | awk -F/ '$1=="apps"||$1=="packages"{print $1"/"$2}' | sort -u)
+touched=$(git diff --name-only "$upstream" HEAD | awk -F/ '$1=="apps"||$1=="packages"{print $1"/"$2}' | sort -u)
 baseline="$(git rev-parse --git-dir)/annex-baseline"
 git worktree remove --force "$baseline" 2>/dev/null || true
 for dir in $touched; do
@@ -104,7 +107,7 @@ for dir in $touched; do
   fails=$(failing_tests "$dir")
   [ -n "$fails" ] || continue
   if [ ! -d "$baseline" ]; then
-    git worktree add -q --detach "$baseline" upstream/main
+    git worktree add -q --detach "$baseline" "$upstream"
     (cd "$baseline" && pnpm install --frozen-lockfile --silent --prefer-offline)
   fi
   files=()
@@ -124,7 +127,7 @@ if $push; then
   git reset -q --hard annex-sync
   git push -q --force-with-lease=main:"$(git rev-parse origin/main)" origin main
   git branch -q -D annex-sync
-  echo "synced main onto upstream $(git rev-parse --short upstream/main)"
+  echo "synced main onto upstream $(git rev-parse --short "$upstream")"
 else
   echo "checks passed on annex-sync (not pushed)"
 fi
