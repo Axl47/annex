@@ -52,3 +52,11 @@
     ${StdUtils.ExecShellAsUser} $0 "$launchLink" "open" ""
   ${EndIf}
 !macroend
+
+; Annex: own install folder, so it never installs over T3 Code (both packages are named t3code).
+!macro preInit
+  ReadRegStr $0 HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation
+  ${If} $0 == ""
+    WriteRegExpandStr HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation "$LOCALAPPDATA\Programs\annex"
+  ${EndIf}
+!macroend
