@@ -11,7 +11,7 @@ import { resolveMobileStageLabel } from "../lib/mobileBranding";
 import { useAndroidControlSizing } from "./ui/useAndroidControlSizing";
 
 const BRAND_MAX_FONT_SCALE = 1.4;
-const WORDMARK_SUFFIX = "Code";
+const WORDMARK_SUFFIX = "nnex";
 
 export function brandTitleOffset(): number {
   if (Platform.OS !== "ios") return 0;
@@ -42,13 +42,13 @@ export function CompactBrandTitle(
         props.fit && showStage ? (event) => setFullWidth(event.nativeEvent.layout.width) : undefined
       }
       aria-level={1}
-      accessibilityLabel={props.accessibilityLabel ?? gt("T3 Code, Threads")}
+      accessibilityLabel={props.accessibilityLabel ?? gt("Annex, Threads")}
       accessible
       role="heading"
-      className="flex-row items-center gap-1.5"
+      className="flex-row items-center gap-px"
       style={[
         { marginLeft: titleOffset },
-        Platform.OS === "android" && { gap: 5.25 * scale },
+        Platform.OS === "android" && { gap: 1 * scale },
         props.fit && { flexShrink: 0 },
       ]}
     >
